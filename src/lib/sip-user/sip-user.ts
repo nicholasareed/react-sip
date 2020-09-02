@@ -33,14 +33,11 @@ import {
 import { Logger } from 'sip.js/lib/core';
 import { holdModifier, SessionDescriptionHandler, Transport } from 'sip.js/lib/platform/web';
 import { SipUserDelegate } from './sip-user-delegate';
-import { SipUserEvents } from './sip-user-events';
 import { SipUserOptions } from './sip-user-options';
-import { EventEmitter } from 'eventemitter3';
 
 export class SipUser {
   /** Delegate. */
   public delegate: SipUserDelegate | undefined;
-  public e = new EventEmitter<SipUserEvents>();
   public session: Session | undefined = undefined;
 
   private attemptingReconnection = false;
@@ -101,16 +98,13 @@ export class SipUser {
       // Handle connection with server established
       onConnect: (): void => {
         this.logger.log(`[${this.id}] Connected`);
-        this.e.emit('connected');
         if (this.delegate && this.delegate.onServerConnect) {
           this.delegate.onServerConnect();
         }
         if (this.registerer && this.registerRequested) {
           this.logger.log(`[${this.id}] Registering...`);
           this.registerer.register()
-            .then((request) => this.e.emit('registered', request))
             .catch((e: Error) => {
-              this.e.emit('registrationFailed', e);
               this.logger.error(`[${this.id}] Error occurred registering after connection with server was obtained.`);
               this.logger.error(e.toString());
             });
@@ -119,7 +113,6 @@ export class SipUser {
       // Handle connection with server lost
       onDisconnect: (error?: Error): void => {
         this.logger.log(`[${this.id}] Disconnected`);
-        this.e.emit('disconnected');
         if (this.delegate && this.delegate.onServerDisconnect) {
           this.delegate.onServerDisconnect(error);
         }
@@ -134,8 +127,7 @@ export class SipUser {
         if (this.registerer) {
           this.logger.log(`[${this.id}] Unregistering...`);
           this.registerer
-            .unregister() // cleanup invalid registrations
-            .then(() => this.e.emit('unregistered'))
+            .unregister() // cleanup invalid registration
             .catch((e: Error) => {
               this.logger.error(`[${this.id}] Error occurred unregistering after connection with server was lost.`);
               this.logger.error(e.toString());
@@ -206,7 +198,6 @@ export class SipUser {
 
     // Monitor network connectivity and attempt reconnection when we come online
     window.addEventListener('online', () => {
-      this.e.emit('network:online');
       this.logger.log(`[${this.id}] Online`);
       this.attemptReconnection();
     });
@@ -674,7 +665,6 @@ export class SipUser {
           this.attemptingReconnection = false;
           return; // If intentionally disconnected, don't reconnect.
         }
-        this.e.emit('network:reconnecting');
         this.userAgent
           .reconnect()
           .then(() => {
