@@ -1,16 +1,12 @@
-import * as JsSIP from 'jssip';
-import {
-  AnswerOptions,
-  HoldEvent,
-  RenegotiateOptions,
-  RTCSession,
-  TerminateOptions,
-} from 'jssip/lib/RTCSession';
-import { IncomingRequest, OutgoingRequest } from 'jssip/lib/SIPMessage';
-import { CallOptions, UnRegisterOptions } from 'jssip/lib/UA';
 import * as PropTypes from 'prop-types';
 import * as React from 'react';
-import dummyLogger from '../../lib/dummyLogger';
+import {
+  InvitationAcceptOptions,
+  Inviter,
+  InviterOptions,
+  RegistererUnregisterOptions,
+} from 'sip.js';
+import dummyLogger from '../../lib/logger';
 import {
   CALL_DIRECTION_INCOMING,
   CALL_DIRECTION_OUTGOING,
@@ -31,11 +27,11 @@ import {
   SipErrorType,
   SipStatus,
 } from '../../lib/enums';
+import { SipUser, SipUserDelegate } from '../../lib/sip-user';
 import {
   callPropType,
   ExtraHeaders,
   extraHeadersPropType,
-  iceServersPropType,
   Logger,
   sipPropType,
   WebAudioHTMLMediaElement,
@@ -50,13 +46,11 @@ export interface JsSipConfig {
   password: string;
   autoRegister: boolean;
   autoAnswer: boolean;
-  iceRestart: boolean;
-  sessionTimersExpires: number;
   extraHeaders: ExtraHeaders;
   iceServers: RTCIceServer[];
   debug: boolean;
-  inboundAudioDeviceId: string;
-  outboundAudioDeviceId: string;
+  inputAudioDeviceId: string;
+  outputAudioDeviceId: string;
   debugNamespaces?: string | null;
 }
 
@@ -70,7 +64,6 @@ export interface JsSipState {
   dtmfSender: RTCDTMFSender | null;
   callIsOnHold: boolean;
   callMicrophoneIsMuted: boolean;
-  rtcSession: RTCSession | null;
 }
 
 export default class SipProvider extends React.Component<JsSipConfig, JsSipState> {
@@ -98,12 +91,10 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     autoRegister: PropTypes.bool,
     autoAnswer: PropTypes.bool,
     iceRestart: PropTypes.bool,
-    sessionTimersExpires: PropTypes.number,
     extraHeaders: extraHeadersPropType,
-    iceServers: iceServersPropType,
     debug: PropTypes.bool,
-    inboundAudioDeviceId: PropTypes.string,
-    outboundAudioDeviceId: PropTypes.string,
+    inputAudioDeviceId: PropTypes.string,
+    outputAudioDeviceId: PropTypes.string,
 
     children: PropTypes.node,
   };
@@ -117,17 +108,15 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     password: null,
     autoRegister: true,
     autoAnswer: false,
-    iceRestart: false,
-    sessionTimersExpires: 120,
     extraHeaders: { register: [], invite: [], hold: [] },
     iceServers: [],
     debug: false,
-    inboundAudioDeviceId: '',
-    outboundAudioDeviceId: '',
+    inputAudioDeviceId: '',
+    outputAudioDeviceId: '',
 
     children: null,
   };
-  private ua: JsSIP.UA | null = null;
+  private ua: SipUser | null = null;
   private remoteAudio: WebAudioHTMLMediaElement | null = null;
   private logger: Logger;
 
@@ -138,8 +127,6 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       sipStatus: SIP_STATUS_DISCONNECTED,
       sipErrorType: null,
       sipErrorMessage: null,
-
-      rtcSession: null,
 
       callStatus: CALL_STATUS_IDLE,
       callDirection: null,
@@ -167,38 +154,34 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
         counterpart: this.state.callCounterpart,
         dtmfSender: this.state.dtmfSender,
         isOnHold: this.state.callIsOnHold,
-        hold: this.callHold,
-        unhold: this.callUnhold,
-        toggleHold: this.callToggleHold,
+        hold: this.hold,
+        unhold: this.unhold(),
+        toggleHold: this.toggleHold,
         microphoneIsMuted: this.state.callMicrophoneIsMuted,
-        muteMicrophone: this.callMuteMicrophone,
-        unmuteMicrophone: this.callUnmuteMicrophone,
-        toggleMuteMicrophone: this.callToggleMuteMicrophone,
-        renegotiate: this.renegotiate,
+        muteMicrophone: this.mute,
+        unmuteMicrophone: this.unmute,
+        toggleMuteMicrophone: this.toggleMuteMicrophone,
       },
       registerSip: this.registerSip,
       unregisterSip: this.unregisterSip,
       audioSinkId: this.audioSinkId,
       setAudioSinkId: this.setAudioSinkId,
-      answerCall: this.answerCall,
-      startCall: this.startCall,
-      stopCall: this.stopCall,
+      answerCall: this.answer,
+      startCall: this.call,
+      stopCall: this.hangup,
       sendDTMF: this.sendDTMF,
     };
   }
 
-  /**
-   * Get the underlying UserAgent from JsSIP
-   */
-  getUA(): JsSIP.UA | null {
+  getUA(): SipUser | null {
     return this.ua;
   }
 
-  getUAOrFail(): JsSIP.UA {
+  getUAOrFail(): SipUser {
     const ua = this.getUA();
 
     if (!ua) {
-      throw new Error('JsSIP.UA not initialized');
+      throw new Error('UserAgent not initialized');
     }
 
     return ua;
@@ -221,7 +204,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     window.document.body.appendChild(this.remoteAudio);
 
     this.reconfigureDebug();
-    this.reinitializeJsSIP();
+    this.reinitialize();
   }
 
   componentDidUpdate(prevProps): void {
@@ -235,76 +218,242 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       this.props.secure !== prevProps.secure ||
       this.props.user !== prevProps.user ||
       this.props.password !== prevProps.password ||
-      this.props.autoRegister !== prevProps.autoRegister ||
-      this.props.inboundAudioDeviceId !== prevProps.inboundAudioDeviceId ||
-      this.props.outboundAudioDeviceId !== prevProps.outboundAudioDeviceId
+      this.props.inputAudioDeviceId !== prevProps.inboundAudioDeviceId ||
+      this.props.outputAudioDeviceId !== prevProps.outboundAudioDeviceId
     ) {
-      this.reinitializeJsSIP();
+      this.reinitialize();
     }
   }
 
   componentWillUnmount(): void {
     this.deleteRemoteAudio();
     if (this.ua) {
-      this.ua.stop();
+      this.ua.disconnect().then(() => this.ua = null);
+    }
+  }
+
+  async reinitialize(): Promise<void> {
+    this.ua = await this.initUA();
+
+    await this.ua.connect();
+    await this.ua.register();
+  }
+
+  private async initUA(): Promise<SipUser> {
+    if (this.ua) {
+      await this.ua.unregister();
       this.ua = null;
     }
-  }
 
-  deleteRemoteAudio(): void {
-    let element: WebAudioHTMLMediaElement;
+    const {
+      host,
+      port,
+      pathname,
+      secure,
+      user,
+      password,
+      inputAudioDeviceId,
+      outputAudioDeviceId,
+    } = this.props;
+
+    if (!host || !port || !user) {
+      this.setState({
+        sipStatus: SIP_STATUS_DISCONNECTED,
+        sipErrorType: null,
+        sipErrorMessage: null,
+      });
+      throw new Error('missing either host, port or user');
+    }
+
+    this.logger.debug({ host, port, pathname, secure, user, inputAudioDeviceId, outputAudioDeviceId });
 
     try {
-      element = this.getRemoteAudioOrFail();
+      if (outputAudioDeviceId) {
+        this.remoteAudio = this.createRemoteAudioElement();
+        this.logger.debug(`Audio.Inbound: Setting sinkId to ${outputAudioDeviceId}`);
+        await this.remoteAudio.setSinkId(outputAudioDeviceId);
+      }
     } catch (e) {
-      return;
+      this.logger.error('AUDIO.INCOMING: Could not set sinkId', e);
+      this.setState({
+        sipStatus: SIP_STATUS_ERROR,
+        sipErrorType: SIP_ERROR_TYPE_CONFIGURATION,
+        sipErrorMessage: e.message,
+      });
+      throw e;
     }
 
-    if (element.parentNode) {
-      element.parentNode.removeChild(element);
-    }
+    const ua = new SipUser(`${secure ? 'wss' : 'ws'}://${host}:${port}${pathname}`, {
+      aor: `sip:${user}@${host}`,
+      userAgentOptions: {
+        authorizationUsername: user,
+        authorizationPassword: password,
+        logConnector: (level, category, label, content) => {
+          let msg = `[sip][${category}]`;
+          if (label) {
+            msg += `(${label})`;
+          }
 
-    this.remoteAudio = null;
+          msg += `: ${content}`;
+
+          this.logger[level](msg);
+        },
+      },
+      media: {
+        constraints: {
+          audio: true,
+          video: false,
+        },
+        remote: {
+          audio: this.getRemoteAudioOrFail(),
+        },
+      },
+    });
+
+    ua.delegate = this.getDelegate(ua);
+
+    return ua;
   }
 
-  registerSip(): void {
+  private getDelegate(ua: SipUser): SipUserDelegate {
+   return {
+      onCallOutgoing(inviter: Inviter) {
+        const foundUri = inviter.localIdentity.toString();
+        const delimiterPosition = foundUri.indexOf(';') || null;
+        this.setState({
+          callDirection: CALL_DIRECTION_OUTGOING,
+          callStatus: CALL_STATUS_STARTING,
+          callCounterpart: delimiterPosition ? foundUri.substring(0, delimiterPosition) || foundUri : foundUri,
+          callIsOnHold: ua.isHeld(),
+          callMicrophoneIsMuted: ua.isMuted() || false,
+        });
+      },
+      onCallReceived(request) {
+        if (ua.session) {
+          ua.decline();
+        } else {
+          ua.answer()
+            .then(() => {
+              const foundUri = request.from.toString();
+              const delimiterPosition = foundUri.indexOf(';') || null;
+              this.setState({
+                callDirection: CALL_DIRECTION_INCOMING,
+                callStatus: CALL_STATUS_STARTING,
+                callCounterpart: delimiterPosition ? foundUri.substring(0, delimiterPosition) || foundUri : foundUri,
+                callIsOnHold: ua.isHeld(),
+                callMicrophoneIsMuted: ua.isMuted() || false,
+              });
+            });
+        }
+      },
+     onCallAnswered() {
+       this.setState({ callStatus: CALL_STATUS_ACTIVE });
+     },
+     onCallHangup() {
+        this.setState({
+          callStatus: CALL_STATUS_IDLE,
+          callDirection: null,
+          callCounterpart: null,
+          callIsOnHold: false,
+          dtmfSender: null,
+          callMicrophoneIsMuted: false,
+        });
+      },
+     onServerConnect() {
+        this.setState({
+          sipStatus: SIP_STATUS_CONNECTED,
+          sipErrorType: null,
+          sipErrorMessage: null,
+        });
+      },
+      onServerDisconnect(error?: Error) {
+        if (!error) {
+          this.setState({
+            sipStatus: SIP_STATUS_ERROR,
+            sipErrorType: SIP_ERROR_TYPE_CONNECTION,
+            sipErrorMessage: 'disconnected',
+          });
+        } else {
+          this.setState({
+            sipStatus: SIP_STATUS_ERROR,
+            sipErrorType: SIP_ERROR_TYPE_CONNECTION,
+            sipErrorMessage: `${error.name} | ${error.message}`,
+          });
+          // tslint:disable-next-line:no-console
+          console.error(error);
+        }
+      },
+      onRegistering() {
+        this.setState({
+          sipStatus: SIP_STATUS_CONNECTING,
+          callStatus: CALL_STATUS_IDLE,
+        });
+      },
+      onRegistered() {
+        this.setState({
+          sipStatus: SIP_STATUS_REGISTERED,
+          callStatus: CALL_STATUS_IDLE,
+        });
+      },
+     onRegisterFailed(error?: any) {
+       this.setState({
+         sipStatus: SIP_STATUS_ERROR,
+         sipErrorType: SIP_ERROR_TYPE_REGISTRATION,
+         sipErrorMessage: error || undefined,
+       });
+     },
+     onUnregistered() {
+        if (ua.isConnected()) {
+          this.setState({
+            sipStatus: SIP_STATUS_CONNECTED,
+            callStatus: CALL_STATUS_IDLE,
+            callDirection: null,
+          });
+        } else {
+          this.setState({
+            sipStatus: SIP_STATUS_DISCONNECTED,
+            callStatus: CALL_STATUS_IDLE,
+            callDirection: null,
+          });
+        }
+      },
+    };
+  }
+
+
+  registerSip(): Promise<void> {
     if (!this.ua) {
-      throw new Error('Calling registerSip is not allowed when JsSIP.UA isn\'t initialized');
-    }
-    if (this.props.autoRegister) {
-      throw new Error('Calling registerSip is not allowed when autoRegister === true');
+      throw new Error('Calling registerSip is not allowed when UserAgent isn\'t initialized');
     }
     if (this.state.sipStatus !== SIP_STATUS_CONNECTED) {
       throw new Error(
         `Calling registerSip is not allowed when sip status is ${this.state.sipStatus} (expected ${SIP_STATUS_CONNECTED})`,
       );
     }
-    this.ua.register();
+
+    return this.ua.register();
   }
 
-  unregisterSip(options?: UnRegisterOptions): void {
+  unregisterSip(options?: RegistererUnregisterOptions): Promise<void> {
     if (!this.ua) {
-      throw new Error('Calling unregisterSip is not allowed when JsSIP.UA isn\'t initialized');
-    }
-    if (this.props.autoRegister) {
-      throw new Error('Calling registerSip is not allowed when autoRegister === true');
+      throw new Error('Calling unregisterSip is not allowed when UserAgent isn\'t initialized');
     }
     if (this.state.sipStatus !== SIP_STATUS_REGISTERED) {
       throw new Error(
         `Calling unregisterSip is not allowed when sip status is ${this.state.sipStatus} (expected ${SIP_STATUS_CONNECTED})`,
       );
     }
-    this.ua.unregister(options);
+
+    return this.ua.unregister(options);
   }
 
-  answerCall = (options?: AnswerOptions): void => {
-    const opts = {
-      mediaConstraints: {
-        audio: true,
-        video: false,
-      },
-      pcConfig: {
-        iceServers: this.props.iceServers,
+  answer = (options?: InvitationAcceptOptions): Promise<void> => {
+    const opts: InvitationAcceptOptions = {
+      sessionDescriptionHandlerOptions: {
+        constraints: {
+          audio: true,
+          video: false,
+        },
       },
     };
 
@@ -316,19 +465,19 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       );
     }
 
-    if (!this.state.rtcSession) {
-      throw new Error('State does not have an active session.');
-    }
-
-    this.state.rtcSession.answer(opts);
+    return this.getUAOrFail().answer(opts);
   };
 
-  startCall = (destination: string | number, anonymous?: boolean): void => {
+  decline = (): Promise<void> => {
+    return this.getUAOrFail().decline();
+  };
+
+  call = (destination: string | number, anonymous?: boolean): Promise<void> => {
     if (!destination) {
       throw new Error(`Destination must be defined (${destination} given)`);
     }
     if (!this.ua) {
-      throw new Error('Calling startCall is not allowed when JsSIP.UA isn\'t initialized');
+      throw new Error('Calling startCall is not allowed when UserAgent isn\'t initialized');
     }
     if (this.state.sipStatus !== SIP_STATUS_CONNECTED && this.state.sipStatus !== SIP_STATUS_REGISTERED) {
       throw new Error(
@@ -346,30 +495,25 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       anonymous = false;
     }
 
-    const { iceServers, sessionTimersExpires } = this.props;
     const extraHeaders = this.props.extraHeaders.invite;
 
-    const options: CallOptions = {
+    const options: InviterOptions = {
       extraHeaders,
-      mediaConstraints: { audio: true, video: false },
-      rtcOfferConstraints: { iceRestart: this.props.iceRestart },
-      pcConfig: {
-        iceServers,
-      },
-      sessionTimersExpires,
       anonymous,
     };
 
-    this.ua.call(String(destination), options);
     this.setState({ callStatus: CALL_STATUS_STARTING });
+
+    return this.ua.call(String(destination), options);
   };
 
-  stopCall = (options?: TerminateOptions) => {
+  hangup = (): Promise<void> => {
     if (!this.ua) {
-      throw new Error('Calling stopCall is not allowed when JsSIP.UA isn\'t initialized');
+      throw new Error('Calling stopCall is not allowed when UserAgent isn\'t initialized');
     }
     this.setState({ callStatus: CALL_STATUS_STOPPING });
-    this.ua.terminateSessions(options);
+
+    return this.ua.hangup();
   };
 
   sendDTMF = (tones: string, duration: number = 100, interToneGap: number = 70) => {
@@ -384,10 +528,8 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     const { debug } = this.props;
 
     if (debug) {
-      JsSIP.debug.enable(this.props.debugNamespaces || 'JsSIP:*');
       this.logger = console;
     } else {
-      JsSIP.debug.disable();
       this.logger = dummyLogger;
     }
   }
@@ -400,448 +542,57 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     return this.remoteAudio?.sinkId || 'undefined';
   }
 
-  async reinitializeJsSIP(): Promise<void> {
-    if (this.ua) {
-      this.ua.stop();
-      this.ua = null;
-    }
-
-    const {
-      host,
-      port,
-      pathname,
-      secure,
-      user,
-      password,
-      autoRegister,
-      // @ts-ignore
-      inboundAudioDeviceId,
-      outboundAudioDeviceId,
-    } = this.props;
-
-    if (!host || !port || !user) {
-      this.setState({
-        sipStatus: SIP_STATUS_DISCONNECTED,
-        sipErrorType: null,
-        sipErrorMessage: null,
-      });
-      return;
-    }
-
-    if (outboundAudioDeviceId) {
-      this.remoteAudio = this.createRemoteAudioElement();
-      this.logger.debug(`Audio.Inbound: Setting sinkId to ${outboundAudioDeviceId}`);
-      await this.remoteAudio.setSinkId(outboundAudioDeviceId);
-    }
-
-    try {
-      const socket = new JsSIP.WebSocketInterface(`${secure ? 'wss' : 'ws'}://${host}:${port}${pathname}`);
-      this.ua = new JsSIP.UA({
-        uri: `sip:${user}@${host}`,
-        password,
-        sockets: [socket],
-        register: autoRegister,
-      });
-      // @ts-ignore
-      window.UA = this.ua;
-      // @ts-ignore
-      window.UA_SOCKET = socket;
-    } catch (error) {
-      this.logger.error('AUDIO.INCOMING: Could not set sinkId', error);
-      this.setState({
-        sipStatus: SIP_STATUS_ERROR,
-        sipErrorType: SIP_ERROR_TYPE_CONFIGURATION,
-        sipErrorMessage: error.message,
-      });
-      return;
-    }
-
-    const { ua } = this;
-    ua.on('connecting', () => {
-      this.logger.debug('UA "connecting" event');
-      if (this.ua !== ua) {
-        return;
-      }
-      this.setState({
-        sipStatus: SIP_STATUS_CONNECTING,
-        sipErrorType: null,
-        sipErrorMessage: null,
-      });
-    });
-
-    ua.on('connected', () => {
-      this.logger.debug('UA "connected" event');
-      if (this.ua !== ua) {
-        return;
-      }
-      this.setState({
-        sipStatus: SIP_STATUS_CONNECTED,
-        sipErrorType: null,
-        sipErrorMessage: null,
-      });
-    });
-
-    ua.on('disconnected', () => {
-      this.logger.debug('UA "disconnected" event');
-      if (this.ua !== ua) {
-        return;
-      }
-      this.setState({
-        sipStatus: SIP_STATUS_ERROR,
-        sipErrorType: SIP_ERROR_TYPE_CONNECTION,
-        sipErrorMessage: 'disconnected',
-      });
-    });
-
-    ua.on('registered', (data) => {
-      this.logger.debug('UA "registered" event', data);
-      if (this.ua !== ua) {
-        return;
-      }
-      this.setState({
-        sipStatus: SIP_STATUS_REGISTERED,
-        callStatus: CALL_STATUS_IDLE,
-      });
-    });
-
-    ua.on('unregistered', () => {
-      this.logger.debug('UA "unregistered" event');
-      if (this.ua !== ua) {
-        return;
-      }
-      if (ua.isConnected()) {
-        this.setState({
-          sipStatus: SIP_STATUS_CONNECTED,
-          callStatus: CALL_STATUS_IDLE,
-          callDirection: null,
-        });
-      } else {
-        this.setState({
-          sipStatus: SIP_STATUS_DISCONNECTED,
-          callStatus: CALL_STATUS_IDLE,
-          callDirection: null,
-        });
-      }
-    });
-
-    ua.on('registrationFailed', (data) => {
-      this.logger.debug('UA "registrationFailed" event');
-      if (this.ua !== ua) {
-        return;
-      }
-      this.setState({
-        sipStatus: SIP_STATUS_ERROR,
-        sipErrorType: SIP_ERROR_TYPE_REGISTRATION,
-        sipErrorMessage: data.cause || data.response.reason_phrase,
-      });
-    });
-
-    ua.on('newRTCSession', ({ originator, session: rtcSession, request: rtcRequest }: { originator: 'local' | 'remote' | 'system', session: RTCSession, request: IncomingRequest | OutgoingRequest }) => {
-        // @ts-ignore
-        window.UA_SESSION = rtcSession;
-        if (!this || this.ua !== ua) {
-          return;
-        }
-
-        const { rtcSession: rtcSessionInState } = this.state;
-        // Avoid if busy or other incoming
-        if (rtcSessionInState) {
-          this.logger.debug('incoming call replied with 486 "Busy Here"');
-          rtcSession.terminate({
-            status_code: 486,
-            reason_phrase: 'Busy Here',
-          });
-          return;
-        }
-
-        // identify call direction
-        if (originator === 'local') {
-          const foundUri = rtcRequest.to.toString();
-          const delimiterPosition = foundUri.indexOf(';') || null;
-          this.setState({
-            callDirection: CALL_DIRECTION_OUTGOING,
-            callStatus: CALL_STATUS_STARTING,
-            callCounterpart: delimiterPosition ? foundUri.substring(0, delimiterPosition) || foundUri : foundUri,
-            callIsOnHold: rtcSession.isOnHold().local,
-            callMicrophoneIsMuted: rtcSession.isMuted().audio || false,
-          });
-        } else if (originator === 'remote') {
-          const foundUri = rtcRequest.from.toString();
-          const delimiterPosition = foundUri.indexOf(';') || null;
-          this.setState({
-            callDirection: CALL_DIRECTION_INCOMING,
-            callStatus: CALL_STATUS_STARTING,
-            callCounterpart: delimiterPosition ? foundUri.substring(0, delimiterPosition) || foundUri : foundUri,
-            callIsOnHold: rtcSession.isOnHold().local,
-            callMicrophoneIsMuted: rtcSession.isMuted().audio || false,
-          });
-        } else {
-          this.logger.warn(`call originator expected to be either local or remote. Got: ${originator}`);
-        }
-
-        this.setState({ rtcSession });
-
-
-        rtcSession.on('failed', () => {
-          if (this.ua !== ua) {
-            return;
-          }
-
-          if (this.state.rtcSession && this.state.rtcSession.connection) {
-            // Close senders, as these keep the microphone open according to browsers (and that keeps Bluetooth headphones from exiting headset mode)
-            this.state.rtcSession.connection.getSenders().forEach((sender) => {
-              if (sender.track) {
-                sender.track.stop();
-              }
-            });
-          }
-
-          this.setState({
-            rtcSession: null,
-            callStatus: CALL_STATUS_IDLE,
-            callDirection: null,
-            callCounterpart: null,
-            dtmfSender: null,
-            callMicrophoneIsMuted: false,
-          });
-        });
-
-        rtcSession.on('ended', () => {
-          if (this.ua !== ua) {
-            return;
-          }
-
-          if (this.state.rtcSession && this.state.rtcSession.connection) {
-            // Close senders, as these keep the microphone open according to browsers (and that keeps Bluetooth headphones from exiting headset mode)
-            this.state.rtcSession.connection.getSenders().forEach((sender) => {
-              if (sender.track) {
-                sender.track.stop();
-              }
-            });
-          }
-
-          this.setState({
-            rtcSession: null,
-            callStatus: CALL_STATUS_IDLE,
-            callDirection: null,
-            callCounterpart: null,
-            callIsOnHold: false,
-            dtmfSender: null,
-            callMicrophoneIsMuted: false,
-          });
-        });
-
-        rtcSession.on('unhold', (e: HoldEvent) => {
-          this.logger.debug('rtcSession.unhold', e);
-
-          rtcSession.unmute({ audio: true, video: false });
-        });
-
-        rtcSession.on('accepted', () => {
-          if (this.ua !== ua) {
-            return;
-          }
-
-          // Set outbound device, if provided
-          // if (outboundAudioDeviceId) {
-          //   // Get the appropriate device and set the new stream
-          //   const constraints = {
-          //     audio: {
-          //       deviceId: {
-          //         exact: outboundAudioDeviceId,
-          //       },
-          //     },
-          //   };
-          //   navigator.mediaDevices
-          //     .getUserMedia(constraints)
-          //     .then((stream) => {
-          //       rtcSession.connection
-          //         .getRemoteStreams()
-          //         .forEach((remoteStream) => {
-          //           // @ts-ignore
-          //           rtcSession.connection.removeStream(remoteStream);
-          //         });
-          //       // @ts-ignore
-          //       rtcSession.connection.addStream(stream);
-          //     })
-          //     .catch((e) => {
-          //       this.logger.warn(
-          //         'Warning: Invalid audio device passed. Caught error:',
-          //       );
-          //       this.logger.warn(e);
-          //     });
-          // }
-
-          this.setRtcSessionOutboundDevice(outboundAudioDeviceId, rtcSession);
-
-          [
-            this.getRemoteAudioOrFail().srcObject,
-          ] = rtcSession.connection.getRemoteStreams();
-
-          // Set up DTMF
-          this.setState({
-            dtmfSender: rtcSession.connection.getSenders()[0].dtmf,
-          });
-
-          const played = this.getRemoteAudioOrFail().play();
-
-          if (typeof played !== 'undefined') {
-            played
-              .catch(() => {
-                /**/
-              })
-              .then(() => {
-                setTimeout(() => {
-                  this.getRemoteAudioOrFail().play();
-                }, 2000);
-              });
-            // this.setState({ dtmfSender: rtcSession.connection.createDTMFSender(rtcSession.getAudioTracks()[0])});
-            this.setState({ callStatus: CALL_STATUS_ACTIVE });
-            return;
-          }
-
-          setTimeout(() => {
-            this.getRemoteAudioOrFail().play();
-          }, 2000);
-
-          this.setState({ callStatus: CALL_STATUS_ACTIVE });
-        });
-
-        this.handleAutoAnswer();
-      },
-    );
-
-    const extraHeadersRegister = this.props.extraHeaders.register || [];
-    if (extraHeadersRegister.length) {
-      ua.registrator().setExtraHeaders(extraHeadersRegister);
-    }
-    ua.start();
-  }
-
-  private handleAutoAnswer() {
-    if (
-      this.state.callDirection === CALL_DIRECTION_INCOMING &&
-      this.props.autoAnswer
-    ) {
-      this.logger.log('Answer auto ON');
-      this.answerCall();
-    } else if (
-      this.state.callDirection === CALL_DIRECTION_INCOMING &&
-      !this.props.autoAnswer
-    ) {
-      this.logger.log('Answer auto OFF');
-    } else if (this.state.callDirection === CALL_DIRECTION_OUTGOING) {
-      this.logger.log('OUTGOING call');
-    }
-  }
-
-  // @ts-ignore
-  private setRtcSessionOutboundDevice(outboundAudioDeviceId: string, rtcSession: RTCSession) {
-    if (!outboundAudioDeviceId) {
-      this.logger.error('setRtcSessionOutboundDevice: no outboundAudioDeviceId provided.');
-      return;
-    }
-    this.logger.debug('setRtcSessionOutboundDevice', { outboundAudioDeviceId });
-
-    // Get the appropriate device and set the new stream
-    const constraints: MediaStreamConstraints = {
-      audio: { deviceId: { exact: outboundAudioDeviceId } },
-    };
-    navigator.mediaDevices
-      .getUserMedia(constraints)
-      .then((stream) => {
-        this.logger.debug('rtcSession.accepted: Got user media', stream);
-        rtcSession.connection
-          .getSenders()
-          .forEach((sender) => {
-            rtcSession.connection.removeTrack(sender);
-          });
-
-        stream.getTracks().forEach((track) => {
-          rtcSession.connection.addTrack(track, stream);
-        });
-      })
-      .catch((e) => {
-        this.logger.error('Invalid audio device passed', e);
-      });
-  }
-
   render(): React.ReactNode {
     return this.props.children;
   }
 
-  callHold = (useUpdate = false): void => {
-    if (!this.state.rtcSession) {
-      this.logger.warn('callHold: no-op as there\'s no active rtcSession');
-      return; // no-op
-    }
-
-    const holdStatus = this.state.rtcSession.isOnHold();
-    if (!holdStatus.local) {
-      const options = {
-        useUpdate,
-        extraHeaders: this.props.extraHeaders.hold,
-      };
-      const done = () => {
-        this.setState({ callIsOnHold: true });
-      };
-      this.state.rtcSession.hold(options, done);
-    }
+  hold = (): Promise<void> => {
+    this.setState({ callIsOnHold: true });
+    return this.getUAOrFail().hold();
   };
 
-  renegotiate = (options?: RenegotiateOptions, done?: () => void) => {
-    if (!this.state.rtcSession) {
-      this.logger.warn('renegotiate: no-op as there\'s no active rtcSession');
-      return; // no-op
-    }
-
-    this.state.rtcSession.renegotiate(options, done);
+  unhold = (): Promise<void> => {
+    this.setState({ callIsOnHold: false });
+    return this.getUAOrFail().unhold();
   };
 
-  callUnhold = (useUpdate = false): void => {
-    if (!this.state.rtcSession) {
-      this.logger.warn('callUnhold: no-op as there\'s no active rtcSession');
-      return; // no-op
+  toggleHold = (): Promise<void> => {
+    const ua = this.getUAOrFail();
+
+    if (ua.isHeld()) {
+      return ua.unhold();
     }
 
-    const holdStatus = this.state.rtcSession.isOnHold();
-    if (holdStatus.local) {
-      const options = {
-        useUpdate,
-        extraHeaders: this.props.extraHeaders.hold,
-      };
-      const done = () => {
-        this.setState({ callIsOnHold: false });
-      };
-      this.state.rtcSession.unhold(options, done);
-    }
+    return ua.hold();
   };
 
-  callToggleHold = (useUpdate = false): void => {
-    if (!this.state.rtcSession) {
-      this.logger.warn('callToggleHold: no-op as there\'s no active rtcSession');
-      return; // no-op
-    }
-
-    const holdStatus = this.state.rtcSession.isOnHold();
-    return holdStatus.local ? this.callUnhold(useUpdate) : this.callHold(useUpdate);
+  mute = () => {
+    this.setState({ callMicrophoneIsMuted: true });
+    this.getUAOrFail().mute();
   };
 
-  callMuteMicrophone = () => {
-    if (this.state.rtcSession && !this.state.callMicrophoneIsMuted) {
-      this.state.rtcSession.mute({ audio: true, video: false });
-      this.setState({ callMicrophoneIsMuted: true });
-    }
+  unmute = () => {
+    this.setState({ callMicrophoneIsMuted: false });
+    this.getUAOrFail().unmute();
   };
 
-  callUnmuteMicrophone = () => {
-    if (this.state.rtcSession && this.state.callMicrophoneIsMuted) {
-      this.state.rtcSession.unmute({ audio: true, video: false });
-      this.setState({ callMicrophoneIsMuted: false });
-    }
-  };
+  toggleMuteMicrophone = () => this.getUAOrFail().isMuted() ? this.unmute() : this.mute();
 
-  callToggleMuteMicrophone = () => this.state.callMicrophoneIsMuted ? this.callUnmuteMicrophone() : this.callMuteMicrophone();
+  private deleteRemoteAudio(): void {
+    let element: WebAudioHTMLMediaElement;
+
+    try {
+      element = this.getRemoteAudioOrFail();
+    } catch (e) {
+      return;
+    }
+
+    if (element.parentNode) {
+      element.parentNode.removeChild(element);
+    }
+
+    this.remoteAudio = null;
+  }
 
   private getRemoteAudioOrFail(): WebAudioHTMLMediaElement {
     if (!this.remoteAudio) {
