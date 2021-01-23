@@ -79,7 +79,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
         startCall: PropTypes.Requireable<(...args: any[]) => any>;
         stopCall: PropTypes.Requireable<(...args: any[]) => any>;
         sendDTMF: PropTypes.Requireable<(...args: any[]) => any>;
-        getUA: PropTypes.Requireable<(...args: any[]) => any>;
+        getUA: PropTypes.Requireable<any>;
         audioSinkId: PropTypes.Requireable<string>;
         setAudioSinkId: PropTypes.Requireable<(...args: any[]) => any>;
     };

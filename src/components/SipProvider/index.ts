@@ -84,7 +84,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     startCall: PropTypes.func,
     stopCall: PropTypes.func,
     sendDTMF: PropTypes.func,
-    getUA: PropTypes.func,
+    getUA: PropTypes.any,
     audioSinkId: PropTypes.string,
     setAudioSinkId: PropTypes.func,
   };
