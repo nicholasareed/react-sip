@@ -263,6 +263,7 @@ var SipProvider = (function (_super) {
             startCall: this.startCall.bind(this),
             stopCall: this.stopCall.bind(this),
             sendDTMF: this.sendDTMF.bind(this),
+            getUA: this.getUA.bind(this),
         };
     };
     SipProvider.prototype.getUA = function () {
@@ -697,6 +698,7 @@ var SipProvider = (function (_super) {
         startCall: PropTypes.func,
         stopCall: PropTypes.func,
         sendDTMF: PropTypes.func,
+        getUA: PropTypes.func,
         audioSinkId: PropTypes.string,
         setAudioSinkId: PropTypes.func,
     };
