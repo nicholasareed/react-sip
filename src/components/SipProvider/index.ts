@@ -64,6 +64,7 @@ export interface JsSipState {
   sipStatus: SipStatus;
   sipErrorType: SipErrorType | null;
   sipErrorMessage: string | null;
+  sipEvent: any;
   callStatus: CallStatus;
   callDirection: CallDirection | null;
   callCounterpart: string | null;
@@ -146,6 +147,8 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       sipErrorType: null,
       sipErrorMessage: null,
 
+      sipEvent: null,
+
       rtcSession: null,
 
       callStatus: CALL_STATUS_IDLE,
@@ -166,6 +169,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
         status: this.state.sipStatus,
         errorType: this.state.sipErrorType,
         errorMessage: this.state.sipErrorMessage,
+        event: this.state.sipEvent,
       },
       call: {
         id: 'UNKNOWN',
@@ -565,6 +569,18 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
         sipErrorType: SIP_ERROR_TYPE_REGISTRATION,
         sipErrorMessage: data.cause || data.response.reason_phrase,
       });
+    });
+
+    ua.on('sipEvent', (data) => {
+      this.logger.debug('UA "sipEvent" event');
+      if (this.ua !== ua) {
+        return;
+      }
+      // TODO: fix this so we dont mis sipEvent messages (probably a better way to handle them??)
+      this.setState((state) => ({
+        ...state,
+        sipEvent: data,
+      }));
     });
 
     ua.on(

@@ -225,6 +225,7 @@ var SipProvider = (function (_super) {
             sipStatus: enums_1.SIP_STATUS_DISCONNECTED,
             sipErrorType: null,
             sipErrorMessage: null,
+            sipEvent: null,
             rtcSession: null,
             callStatus: enums_1.CALL_STATUS_IDLE,
             callDirection: null,
@@ -238,7 +239,7 @@ var SipProvider = (function (_super) {
     }
     SipProvider.prototype.getChildContext = function () {
         return {
-            sip: __assign(__assign({}, this.props), { status: this.state.sipStatus, errorType: this.state.sipErrorType, errorMessage: this.state.sipErrorMessage }),
+            sip: __assign(__assign({}, this.props), { status: this.state.sipStatus, errorType: this.state.sipErrorType, errorMessage: this.state.sipErrorMessage, event: this.state.sipEvent }),
             call: {
                 id: 'UNKNOWN',
                 status: this.state.callStatus,
@@ -508,6 +509,13 @@ var SipProvider = (function (_super) {
                                 sipErrorType: enums_1.SIP_ERROR_TYPE_REGISTRATION,
                                 sipErrorMessage: data.cause || data.response.reason_phrase,
                             });
+                        });
+                        ua.on('sipEvent', function (data) {
+                            _this.logger.debug('UA "sipEvent" event');
+                            if (_this.ua !== ua) {
+                                return;
+                            }
+                            _this.setState(function (state) { return (__assign(__assign({}, state), { sipEvent: data })); });
                         });
                         ua.on('newRTCSession', function (_a) {
                             var originator = _a.originator, rtcSession = _a.session, rtcRequest = _a.request;

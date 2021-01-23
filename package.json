@@ -40,7 +40,7 @@
     },
     "homepage": "https://github.com/evercall/react-sip#readme",
     "dependencies": {
-        "jssip": "^3.5.7",
+        "jssip": "^3.7.0",
         "prop-types": "^15.7.2"
     },
     "peerDependencies": {

@@ -29,6 +29,7 @@ export interface JsSipState {
     sipStatus: SipStatus;
     sipErrorType: SipErrorType | null;
     sipErrorMessage: string | null;
+    sipEvent: any;
     callStatus: CallStatus;
     callDirection: CallDirection | null;
     callCounterpart: string | null;
@@ -135,6 +136,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
             status: SipStatus;
             errorType: "sipErrorType/CONFIGURATION" | "sipErrorType/CONNECTION" | "sipErrorType/REGISTRATION" | null;
             errorMessage: string | null;
+            event: any;
             socket: string;
             user: string;
             password: string;
