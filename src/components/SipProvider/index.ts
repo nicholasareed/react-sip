@@ -169,7 +169,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
         status: this.state.sipStatus,
         errorType: this.state.sipErrorType,
         errorMessage: this.state.sipErrorMessage,
-        event: this.state.sipEvent,
+        event: this.state.sipEvent, // most recent event
       },
       call: {
         id: 'UNKNOWN',
@@ -579,7 +579,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       // TODO: fix this so we dont mis sipEvent messages (probably a better way to handle them??)
       this.setState((state) => ({
         ...state,
-        sipEvent: data,
+        sipEvent: { ...data, _: Date.now() },
       }));
     });
 

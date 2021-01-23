@@ -515,7 +515,7 @@ var SipProvider = (function (_super) {
                             if (_this.ua !== ua) {
                                 return;
                             }
-                            _this.setState(function (state) { return (__assign(__assign({}, state), { sipEvent: data })); });
+                            _this.setState(function (state) { return (__assign(__assign({}, state), { sipEvent: __assign(__assign({}, data), { _: Date.now() }) })); });
                         });
                         ua.on('newRTCSession', function (_a) {
                             var originator = _a.originator, rtcSession = _a.session, rtcRequest = _a.request;
