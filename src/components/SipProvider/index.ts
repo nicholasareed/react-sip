@@ -261,6 +261,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
   componentWillUnmount(): void {
     this.deleteRemoteAudio();
     if (this.ua) {
+      // console.info('ua.stop unmounted');
       this.ua.stop();
       this.ua = null;
     }
@@ -309,6 +310,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
         `Calling unregisterSip is not allowed when sip status is ${this.state.sipStatus} (expected ${SIP_STATUS_CONNECTED})`,
       );
     }
+    // console.info('ua.unregister ');
     this.ua.unregister(options);
   }
 
@@ -423,6 +425,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
 
   async reinitializeJsSIP(): Promise<void> {
     if (this.ua) {
+      // console.info('ua.stop reinitialize');
       this.ua.stop();
       this.ua = null;
     }
@@ -577,6 +580,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
         return;
       }
       // TODO: fix this so we dont mis sipEvent messages (probably a better way to handle them??)
+      // console.log('ua sipEvent', data);
       this.setState((state) => ({
         ...state,
         sipEvent: { ...data, _: Date.now() },
