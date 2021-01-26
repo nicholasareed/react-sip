@@ -1,10 +1,5 @@
 import * as PropTypes from 'prop-types';
-
-export interface ExtraHeaders {
-  register?: string[];
-  invite?: string[];
-  hold?: string[];
-}
+import { DTMF_TRANSPORT } from 'jssip/lib/Constants'
 
 export const extraHeadersPropType = PropTypes.objectOf(PropTypes.arrayOf(PropTypes.string));
 
@@ -78,6 +73,12 @@ export const callPropType = PropTypes.shape({
   unmuteMicrophone: PropTypes.func,
   toggleMuteMicrophone: PropTypes.func,
 });
+
+export interface DtmfOptions {
+  duration: number,
+  interToneGap: number,
+  channelType: DTMF_TRANSPORT | undefined,
+}
 
 /**
  * Extended version of {HTMLAudioElement} with typings for the Audio Output Devices API
