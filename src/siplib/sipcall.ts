@@ -20,6 +20,7 @@ import { SipExtraHeaders } from "./sipua";
 
 import {Logger} from "../lib/types"
 import {DTMF_TRANSPORT} from "jssip/lib/Constants";
+import {MediaEngine} from "../medialib/mediaengine";
 
 export interface SipCallConfig {
   extraHeaders: SipExtraHeaders;
@@ -56,14 +57,17 @@ export class SipCall {
   _outputStreams: OutputMediaStream;
   _outputMediaStream: MediaStream | null;
   _peerConnection: RTCPeerConnection | null;
+  _mediaEngine: MediaEngine; // Media Engine instance
 
   constructor(callConfig: SipCallConfig,
               rtcConfig: RTCConfiguration,
-              dtmfOptions: DtmfOptions) {
+              dtmfOptions: DtmfOptions,
+              mediaEngine: MediaEngine) {
     this._rtcSession = null;
     this._callConfig = callConfig;
     this._rtcConfig = rtcConfig;
     this._dtmfOptions = dtmfOptions;
+    this._mediaEngine = mediaEngine;
     this._id = this._uuid();
     this._init();
   }
@@ -125,7 +129,7 @@ export class SipCall {
       iceRestart: false,
     }
   }
-  setInputMediaStream = (stream: MediaStream): void => {
+  setInputMediaStream = (stream: MediaStream | null): void => {
     this._inputMediaStream = stream;
   }
   getInputMediaStream = (): MediaStream | null => {
@@ -138,7 +142,7 @@ export class SipCall {
     this.setRTCSession(rtcSession);
     this.initSessionEventHandler();
   }
-  setPeerConnection = (conn: RTCPeerConnection): void => {
+  setPeerConnection = (conn: RTCPeerConnection | null): void => {
     this._peerConnection = conn;
   }
   isDialing = (): boolean => {
@@ -168,29 +172,33 @@ export class SipCall {
   // Dial a new call
   dial = (ua: JsSIP.UA,  // SIP UA instance
           target: string, // target uri
-          localMedia: MediaStream,
           hasAudio: boolean, // has audio
           hasVideo: boolean): void => {
 
-    const opts = {
-      mediaConstraints: {
-        audio: hasAudio,
-        video: hasVideo,
-      },
-      mediaStream: localMedia,
-      rtcOfferConstraints: this.getRTCOfferConstraints(),
-      pcConfig: this.getRTCConfig(),
-      extraHeaders: this.getExtraHeaders().invite,
-      sessionTimerExpires: this.getSessionTimerExpires(),
-    };
-    ua.call(target, opts);
-    this.setCallStatus(CALL_STATUS_DIALING);
-    // set the input stream
-    this.setInputMediaStream(localMedia);
+    this._mediaEngine.openStreams(hasAudio, hasVideo).then((stream) => {
+      if(!stream) {
+        throw Error('Failed to opened input streams');
+      }
+      const opts = {
+        mediaConstraints: {
+          audio: hasAudio,
+          video: hasVideo,
+        },
+        mediaStream: stream,
+        rtcOfferConstraints: this.getRTCOfferConstraints(),
+        pcConfig: this.getRTCConfig(),
+        extraHeaders: this.getExtraHeaders().invite,
+        sessionTimerExpires: this.getSessionTimerExpires(),
+      };
+      ua.call(target, opts);
+      this.setCallStatus(CALL_STATUS_DIALING);
+      // set the input stream
+      this.setInputMediaStream(stream);
+    });
   }
 
   // ACCEPT incoming call
-  accept = (hasAudio: boolean, hasVideo: boolean, mediaStream: MediaStream): void => {
+  accept = (hasAudio: boolean, hasVideo: boolean): void => {
     if(!this.isSessionActive()) {
       throw new Error("RtcSession is not active");
     }
@@ -199,21 +207,24 @@ export class SipCall {
         `Calling answer() is not allowed when call status is ${this.getCallStatus()}`,
       );
     }
-    const options = {
-      // if extra headers are required for a provider then enable it using config
-      extraHeaders: this.getExtraHeaders().resp2xx,
-      mediaConstraints: {
-        audio: hasAudio,
-        video: hasVideo,
-      },
-      pcConfig: this.getRTCConfig(),
-      mediaStream,
-      sessionTimerExpires: this.getSessionTimerExpires(),
-    };
-    // JsSIP answer
-    this.getRTCSession()!.answer(options);
-    this.setCallStatus(CALL_STATUS_CONNECTING);
-    this.setInputMediaStream(mediaStream);
+    this._mediaEngine.openStreams(hasAudio, hasVideo).then((inputStream) => {
+      const options = {
+        // if extra headers are required for a provider then enable it using config
+        extraHeaders: this.getExtraHeaders().resp2xx,
+        mediaConstraints: {
+          audio: hasAudio,
+          video: hasVideo,
+        },
+        pcConfig: this.getRTCConfig(),
+        inputStream,
+        sessionTimerExpires: this.getSessionTimerExpires(),
+      };
+      // JsSIP answer
+      this.getRTCSession()!.answer(options);
+      this.setCallStatus(CALL_STATUS_CONNECTING);
+      this.setInputMediaStream(inputStream);
+
+    });
   }
 
   // REJECT incoming call
@@ -254,6 +265,11 @@ export class SipCall {
     };
 
     this.getRTCSession()!.terminate(options);
+    // close the input stream
+    const inputStream = this.getInputMediaStream();
+    if(inputStream) {
+      this._mediaEngine.closeStream(inputStream);
+    }
   }
 
   // send DTMF
@@ -442,7 +458,7 @@ export class SipCall {
     // TODO implement transfer logic
   }
 
-  updateOutStreams = (trackKind: string): void => {
+  startOutStreams = (trackKind: string): void => {
     const peerConnection = this._peerConnection;
     const outMediaStream = this._outputStreams.mediaStream;
 
@@ -456,9 +472,7 @@ export class SipCall {
     if(element && element.srcObject.id !== outMediaStream.id) {
       element.srcObject = outMediaStream;
     }
-
   }
-
   initSessionEventHandler = (): void => {
     const rtcSession = this.getRTCSession();
     if(!this.isSessionActive()) {
@@ -472,7 +486,7 @@ export class SipCall {
       this.setPeerConnection(data.peerconnection);
       data.peerconnection.addEventListener('ontrack', (event: RTCTrackEvent) => {
         this._logger.debug('PeerConnection "ontrack" event received');
-        this.updateOutStreams(event.track.kind);
+        this.startOutStreams(event.track.kind);
       })
     });
 
@@ -498,30 +512,31 @@ export class SipCall {
       this._logger.debug('RTCSession "accepted" event received', data)
       this.setCallStatus(CALL_STATUS_CONNECTING);
       // TODO: pass call id
-      // this.props.onCallAccepted();
     });
     rtcSession!.on('confirmed', (data) => {
       this._logger.debug('RTCSession "confirmed" event received', data)
       this.setCallStatus(CALL_STATUS_ACTIVE);
       // Notify app - so app can play tones if required
-      // TODO: pass call id
-      // this.props.onCallActive();
     });
     rtcSession!.on('ended', (data) => {
       this._logger.debug('RTCSession "ended" event received', data)
       this.setCallStatus(CALL_STATUS_IDLE);
       // const originator: string = data.originator;
       // const reason: string = data.cause;
-      // TODO: pass call id
-      // this.props.onCallHangup(originator, reason);
+      if(this._inputMediaStream) {
+        this._mediaEngine.closeStream(this._inputMediaStream);
+        this.setInputMediaStream(null);
+      }
     });
     rtcSession!.on('failed', (data) => {
       this._logger.debug('RTCSession "failed" event received', data)
       this.setCallStatus(CALL_STATUS_IDLE);
       // const originator: string = data.originator;
       // const reason: string = data.cause;
-      // TODO: pass call id
-      // this.props.onCallFailure(originator, reason);
+      if(this._inputMediaStream) {
+        this._mediaEngine.closeStream(this._inputMediaStream);
+        this.setInputMediaStream(null);
+      }
     });
     rtcSession!.on('newDTMF', (data) => {
       this._logger.debug('RTCSession "newDtmf" event received', data)
@@ -540,17 +555,14 @@ export class SipCall {
         } else if(mediaSessionStatus === MEDIA_SESSION_STATUS_SENDONLY) {
           this.setMediaSessionStatus(MEDIA_SESSION_STATUS_INACTIVE);
         }
-        // this.props.onRemoteHold();
       } else {
         if(mediaSessionStatus === MEDIA_SESSION_STATUS_ACTIVE) {
           this.setMediaSessionStatus(MEDIA_SESSION_STATUS_SENDONLY);
         } else if(mediaSessionStatus === MEDIA_SESSION_STATUS_RECVONLY) {
           this.setMediaSessionStatus(MEDIA_SESSION_STATUS_INACTIVE);
         }
-        // this.props.onLocalHold();
       }
       // Notify app - so app can play tones if required
-      // TODO: pass call id
     });
     rtcSession!.on('unhold', (data) => {
       const originator = data.originator;
@@ -563,14 +575,12 @@ export class SipCall {
         } else if(mediaSessionStatus === MEDIA_SESSION_STATUS_INACTIVE) {
           this.setMediaSessionStatus(MEDIA_SESSION_STATUS_SENDONLY);
         }
-        // this.props.onRemoteUnHold();
       } else {
         if(mediaSessionStatus === MEDIA_SESSION_STATUS_SENDONLY) {
           this.setMediaSessionStatus(MEDIA_SESSION_STATUS_ACTIVE);
         } else if(mediaSessionStatus === MEDIA_SESSION_STATUS_INACTIVE) {
           this.setMediaSessionStatus(MEDIA_SESSION_STATUS_RECVONLY);
         }
-        // this.props.onLocalUnHold();
       }
     });
     rtcSession!.on('muted', (data) => {

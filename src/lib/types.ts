@@ -13,6 +13,7 @@ export type IceServers = {
 }[];
 export const iceServersPropType = PropTypes.arrayOf(PropTypes.object);
 
+/*
 export interface Sip {
   status?: string;
   errorType?: string;
@@ -31,7 +32,7 @@ export interface Sip {
   debug: boolean;
   debugNamespaces?: string;
 }
-
+*/
 export const sipPropType = PropTypes.shape({
   status: PropTypes.string,
   errorType: PropTypes.string,

@@ -1,13 +1,10 @@
+import {MediaTone} from "..";
 
 export interface MediaConfig {
   enabled: boolean,
   deviceIds: string[],
-  mediaElement: {
-    elementId: string | null,
-    element: HTMLMediaElement | null,
-  }
+  element: HTMLMediaElement | null,
 }
-
 export interface MediaEngineConfig {
   audio: {
     in: MediaConfig,
@@ -15,14 +12,13 @@ export interface MediaEngineConfig {
   },
   video: {
     in: MediaConfig,
+    out: MediaConfig,
   },
 }
-
 export interface MediaDevice {
   deviceId: string,
   label: string,
 }
-
 export class MediaEngine {
   _config: MediaEngineConfig | null;
   _availableDevices: MediaDeviceInfo[];
@@ -31,11 +27,13 @@ export class MediaEngine {
 
   constructor(config: MediaEngineConfig | null) {
     this._isCapturing = false;
+    this._availableDevices = [];
     this._prepareConfig(config);
     this._initDevices();
     this._initInputStreams();
   }
 
+  // Fetch available devices
   availableDevices = (deviceKind: "audioinput" | "audiooutput" | "videoinput"): MediaDevice[] => {
     const result: MediaDevice[] = [];
     this._availableDevices.forEach((device) => {
@@ -55,7 +53,7 @@ export class MediaEngine {
   }
 
   // Open
-  openStreams = async (audio: boolean, video: boolean): Promise<MediaStream | void> => {
+  openStreams = async (audio: boolean, video: boolean): Promise<MediaStream | null> => {
     const opts = this._getMediaConstraints(audio, video);
 
     // If already capturing
@@ -64,7 +62,7 @@ export class MediaEngine {
         return this._startStreams(mediaStream);
       }).catch((err) => {
         // log the error
-        return;
+        return null;
       });
     } else {
       this._isCapturing = true;
@@ -84,6 +82,7 @@ export class MediaEngine {
           })
           return unattachedStream;
         }).then((stream: MediaStream) => {
+          this._attachMediaStream(stream, 'audio');
           this._attachMediaStream(stream, 'video');
           return stream;
         })
@@ -123,6 +122,10 @@ export class MediaEngine {
   unMuteAudio = (): void => {
     this._enableAudioChannels(true);
   }
+  // TODO: Implement playing tones
+  playTone = (tone: MediaTone): void => {
+    // play tone to the output device
+  }
 
   _prepareConfig(config: MediaEngineConfig | null) {
     if(!config) {
@@ -132,28 +135,24 @@ export class MediaEngine {
           in: {
             enabled: true,
             deviceIds: [],
-            mediaElement: {
-              element: null,
-              elementId: null,
-            },
+            element: null,
           },
           out: {
             enabled: true,
             deviceIds: [],
-            mediaElement: {
-              element: null,
-              elementId: null,
-            },
+            element: null,
           },
         },
         video: {
           in: {
             enabled: true,
             deviceIds: [],
-            mediaElement: {
-              element: null,
-              elementId: null,
-            },
+            element: null,
+          },
+          out: {
+            enabled: false,
+            deviceIds: [],
+            element: null,
           },
         },
       };
@@ -212,7 +211,6 @@ export class MediaEngine {
             devices.forEach((deviceInfo) => {
               this._availableDevices.push(deviceInfo);
             });
-            // dont stop the existing streams while phone init
           })
           .catch((err) => {
             // log error
@@ -249,31 +247,46 @@ export class MediaEngine {
     }
     return constraints;
   }
-
+  _hasInputDevieExists = (trackKind: string): boolean => {
+    let deviceInfo: MediaDeviceInfo | null | undefined = null;
+    if(trackKind === 'audio') {
+      deviceInfo = this._availableDevices.find((device) => device.kind === 'audioinput');
+    } else if(trackKind === 'video') {
+      deviceInfo = this._availableDevices.find((device) => device.kind === 'audioinput');
+    }
+    if(deviceInfo && deviceInfo !== undefined) {
+      return true;
+    }
+    return false;
+  }
   // initialize input streams
   // Only the configured devices
   _initInputStreams = (): void => {
-    const constraints = this._getMediaConstraints(this._isAudioEnabled(), this._isVideoEnabled());
 
+    const constraints = this._getMediaConstraints(this._isAudioEnabled(), this._isVideoEnabled());
     // attach media elements for each track
     navigator.mediaDevices.getUserMedia(constraints).then((mediaStream) => {
       mediaStream.getTracks().forEach((track) => {
-        // attach input media streams to HTML element
-        this._attachMediaStream(mediaStream, track.kind);
+        if(track && track !== undefined) {
+          // stop the current stream if any
+          track.stop();
+          // attach input media streams to configured HTML element
+          this._attachMediaStream(mediaStream, track.kind);
+          mediaStream.addTrack(track);
+        }
       });
     }).catch((err) => {
       // log
       // TODO re-try with audio only
     })
   }
-
   _attachMediaStream = (mediaStream: MediaStream, trackKind: string): void => {
     let element: HTMLMediaElement | undefined | null = null;
     // attach audio element ?? not required
     if(trackKind === 'audio') {
-      element = this._config?.audio.in.mediaElement.element;
+      element = this._config?.audio.in.element;
     } else if(trackKind === 'video') {
-      element = this._config?.video.in.mediaElement.element;
+      element = this._config?.video.in.element;
     }
     // @ts-ignore
     if(element && element !== undefined && element.srcObject.id !== mediaStream.id) {

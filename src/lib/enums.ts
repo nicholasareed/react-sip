@@ -63,4 +63,10 @@ export type MediaDeviceKind =
   | 'mediaDeviceKind/AUDIO_OUT'
   | 'mediaDeviceKind/VIDEO_IN';
 
+export const MEDIA_TONE_RINGING = 'mediaTone/RINGING';
+export const MEDIA_TONE_DIALING = 'mediaTone/DIALING';
+export type MediaTone =
+  | 'mediaTone/RINGING'
+  | 'mediaTone/DIALING';
+
 

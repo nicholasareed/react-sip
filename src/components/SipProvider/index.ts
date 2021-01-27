@@ -363,16 +363,14 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     const rtcConfig = this.getRTCConfig();
     const dtmfOptions = this.getDtmfOptions();
     // @ts-ignore
-    const sipCall = new SipCall(this.getCallConfig(), rtcConfig, dtmfOptions);
+    const sipCall = new SipCall(this.getCallConfig(), rtcConfig, dtmfOptions, this.mediaEngine);
     const ua = this.getUA();
 
     // create Input MediaStream from MediaDevice
-    this.mediaEngine!.openStreams(true, isVideoCall).then((inputStream) => {
-      // @ts-ignore
-      sipCall.dial(ua, callee, inputStream, true, false);
-      callList.push(sipCall);
-      this.setState({callList});
-    });
+    // @ts-ignore
+    sipCall.dial(ua, callee, true, false);
+    callList.push(sipCall);
+    this.setState({callList});
 
     return sipCall.getId();
   }
@@ -383,12 +381,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       return call.getId() === callId;
     })
     if (incomingCall && incomingCall !== undefined) {
-      this.mediaEngine!.openStreams(true, isVideoCall).then((inputStream) => {
-        // @ts-ignore
-        incomingCall.accept(true, false, inputStream);
-      }).catch((err) => {
-        // throw exception
-      })
+      incomingCall.accept(true, false);
     }
   }
 
