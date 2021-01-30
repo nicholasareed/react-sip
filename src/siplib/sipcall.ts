@@ -1,10 +1,12 @@
 import * as JsSIP from 'jssip';
+import * as EventEmitter from 'eventemitter3';
 import { RTCSession } from "jssip/lib/RTCSession";
 import dummyLogger from '../lib/dummyLogger'
 import {
+  CALL_STATUS_IDLE,
   CALL_STATUS_ACTIVE,
   CALL_STATUS_CONNECTING,
-  CALL_STATUS_DIALING, CALL_STATUS_IDLE,
+  CALL_STATUS_DIALING,
   CALL_STATUS_PROGRESS,
   CALL_STATUS_RINGING,
   CallStatus,
@@ -55,26 +57,42 @@ export class SipCall {
   // Media Streams
   _inputMediaStream: MediaStream | null;
   _outputStreams: OutputMediaStream;
-  _outputMediaStream: MediaStream | null;
   _peerConnection: RTCPeerConnection | null;
   _mediaEngine: MediaEngine; // Media Engine instance
+  _eventEmitter: EventEmitter;
+  // call variables
+  _startTime: Date | undefined;
+  _endTime: Date | undefined;
+  _remoteUri: string;
+  _endType: 'hangup' | 'failure' | 'none';
+  _errorCause: string;
 
-  constructor(callConfig: SipCallConfig,
+  constructor(isDialing: boolean,
+              callConfig: SipCallConfig,
               rtcConfig: RTCConfiguration,
               dtmfOptions: DtmfOptions,
-              mediaEngine: MediaEngine) {
+              mediaEngine: MediaEngine,
+              eventEmitter: EventEmitter) {
     this._rtcSession = null;
     this._callConfig = callConfig;
     this._rtcConfig = rtcConfig;
     this._dtmfOptions = dtmfOptions;
     this._mediaEngine = mediaEngine;
+    this._eventEmitter = eventEmitter;
+    this._remoteUri = '';
+    this._endType = 'none';
+    this._errorCause = '';
     this._id = this._uuid();
-    this._init();
+    this._init(isDialing);
   }
 
-  _init = (): void => {
-    this.setCallStatus(CALL_STATUS_IDLE);
-    this.configureDebug();
+  _init = (isDialing: boolean): void => {
+    if(isDialing === true) {
+      this.setCallStatus(CALL_STATUS_DIALING);
+    } else {
+      this.setCallStatus(CALL_STATUS_RINGING);
+    }
+    this._configureDebug();
     this._outputStreams = {
       mediaStream: new MediaStream(),
       elements: {
@@ -87,7 +105,6 @@ export class SipCall {
   getId = (): string => {
     return this._id;
   }
-
   getExtraHeaders = (): SipExtraHeaders => {
     return this._callConfig.extraHeaders;
   }
@@ -110,7 +127,18 @@ export class SipCall {
     this._callStatus = status;
   }
   isActive = (): boolean => {
-    return (this._callStatus === CALL_STATUS_ACTIVE);
+    if(this._callStatus === CALL_STATUS_CONNECTING ||
+       this._callStatus === CALL_STATUS_ACTIVE) {
+      return true;
+    }
+    return false;
+  }
+  isMediaActive = (): boolean => {
+    if (this._callStatus === CALL_STATUS_ACTIVE &&
+        this._mediaSessionStatus === MEDIA_SESSION_STATUS_ACTIVE) {
+      return true;
+    }
+    return false;
   }
   getMediaSessionStatus = (): MediaSessionStatus => {
     return this._mediaSessionStatus;
@@ -136,20 +164,47 @@ export class SipCall {
     return this._inputMediaStream;
   }
   onNewRTCSession = (rtcSession: RTCSession): void => {
+    // tslint:disable-next-line:no-console
+    console.log("ON NEW RTC Session");
     if(!rtcSession) {
       throw Error(`New Session is not active`);
     }
+    this._remoteUri = rtcSession.remote_identity.uri.toAor();
     this.setRTCSession(rtcSession);
-    this.initSessionEventHandler();
+    this._initSessionEventHandler();
+    this._eventEmitter.emit('call.update', {'call': this});
   }
   setPeerConnection = (conn: RTCPeerConnection | null): void => {
     this._peerConnection = conn;
   }
   isDialing = (): boolean => {
-    return (this.getCallStatus() === CALL_STATUS_DIALING);
+    if((this._callStatus === CALL_STATUS_DIALING) ||
+      (this._callStatus === CALL_STATUS_PROGRESS)) {
+      return true;
+    }
+    return false;
+  }
+  isRinging = (): boolean => {
+    return (this._callStatus === CALL_STATUS_RINGING);
   }
 
-  configureDebug = (): void => {
+  startTime = (): Date | undefined => {
+    return this._startTime;
+  }
+  endTime = (): Date | undefined => {
+    return this._endTime;
+  }
+  remoteUri = (): string => {
+    return this._remoteUri;
+  }
+  errorReason = (): string => {
+    return this._errorCause;
+  }
+  isFailed = (): boolean => {
+    return this._endType === 'failure';
+  }
+
+  _configureDebug = (): void => {
     if (this._debug) {
       JsSIP.debug.enable(this._debugNamespaces || 'JsSIP:*');
       this._logger = console;
@@ -188,10 +243,12 @@ export class SipCall {
         rtcOfferConstraints: this.getRTCOfferConstraints(),
         pcConfig: this.getRTCConfig(),
         extraHeaders: this.getExtraHeaders().invite,
-        sessionTimerExpires: this.getSessionTimerExpires(),
+        sessionTimersExpires: this.getSessionTimerExpires(),
       };
-      ua.call(target, opts);
+
       this.setCallStatus(CALL_STATUS_DIALING);
+      this._eventEmitter.emit('call.update', {'call': this});
+      ua.call(target, opts);
       // set the input stream
       this.setInputMediaStream(stream);
     });
@@ -458,40 +515,42 @@ export class SipCall {
     // TODO implement transfer logic
   }
 
-  startOutStreams = (trackKind: string): void => {
-    const peerConnection = this._peerConnection;
+  _handleRemoteTrack = (track: MediaStreamTrack): void => {
     const outMediaStream = this._outputStreams.mediaStream;
-
-    peerConnection?.getReceivers().forEach((peer) =>{
-      if(peer.track) {
-        outMediaStream.addTrack(peer.track);
-      }
-    });
-
-    const element = this._outputStreams.elements[trackKind];
+    // check if track is already present or not
+    const trackExists = outMediaStream.getTracks().find((t) => t.id === track.id);
+    if(!trackExists) {
+      outMediaStream.addTrack(track);
+    }
+    const element = this._outputStreams.elements[track.kind];
     if(element && element.srcObject.id !== outMediaStream.id) {
       element.srcObject = outMediaStream;
     }
   }
-  initSessionEventHandler = (): void => {
+
+  _initSessionEventHandler = (): void => {
     const rtcSession = this.getRTCSession();
     if(!this.isSessionActive()) {
       throw Error(`SM Init failed - Session is not ACTIVE`);
     }
 
     rtcSession!.on('peerconnection', (data) => {
+      // tslint:disable-next-line:no-console
+      console.log("ON peerconnection event");
       // handle peer connection events
       this._logger.debug('RTCSession "peerconnection" event received', data)
       // pass the event to the provider
       this.setPeerConnection(data.peerconnection);
       data.peerconnection.addEventListener('ontrack', (event: RTCTrackEvent) => {
         this._logger.debug('PeerConnection "ontrack" event received');
-        this.startOutStreams(event.track.kind);
+        this._handleRemoteTrack(event.track);
       })
     });
 
     // CONNECTING EVENT
     rtcSession!.on('connecting', (data) => {
+      // tslint:disable-next-line:no-console
+      console.log("ON connecting event");
       // log it
       this._logger.debug('RTCSession "connecting" event received', data)
     });
@@ -501,42 +560,59 @@ export class SipCall {
       this._logger.debug('RTCSession "sending" event received', data)
     });
     rtcSession!.on('progress', (data) => {
+      // tslint:disable-next-line:no-console
+      console.log("ON session Progress event");
       this._logger.debug('RTCSession "progress" event received', data)
-      this.setCallStatus(CALL_STATUS_PROGRESS);
-      // Notify app
-      // TODO: pass call id
-      // this.props.onCallProgress();
+      if(this.getCallStatus() === CALL_STATUS_DIALING) {
+        this.setCallStatus(CALL_STATUS_PROGRESS);
+        this._eventEmitter.emit('call.update', {'call': this});
+      }
     });
     // 200 OK received/send
     rtcSession!.on('accepted', (data) => {
+      // tslint:disable-next-line:no-console
+      console.log("ON session accepted event");
       this._logger.debug('RTCSession "accepted" event received', data)
+      this._startTime = rtcSession?.start_time;
       this.setCallStatus(CALL_STATUS_CONNECTING);
-      // TODO: pass call id
+      this._eventEmitter.emit('call.update', {'call': this});
     });
     rtcSession!.on('confirmed', (data) => {
+      // tslint:disable-next-line:no-console
+      console.log("ON session confirmed event");
       this._logger.debug('RTCSession "confirmed" event received', data)
       this.setCallStatus(CALL_STATUS_ACTIVE);
-      // Notify app - so app can play tones if required
+      this._eventEmitter.emit('call.update', {'call': this});
     });
     rtcSession!.on('ended', (data) => {
+      // tslint:disable-next-line:no-console
+      console.log("ON session ended event");
       this._logger.debug('RTCSession "ended" event received', data)
-      this.setCallStatus(CALL_STATUS_IDLE);
       // const originator: string = data.originator;
       // const reason: string = data.cause;
       if(this._inputMediaStream) {
         this._mediaEngine.closeStream(this._inputMediaStream);
         this.setInputMediaStream(null);
       }
+      this._endTime = rtcSession?.end_time;
+      this._endType = 'hangup';
+      this.setCallStatus(CALL_STATUS_IDLE);
+      this._eventEmitter.emit('call.ended', {'call': this});
     });
     rtcSession!.on('failed', (data) => {
+      // tslint:disable-next-line:no-console
+      console.log("ON session failed event");
       this._logger.debug('RTCSession "failed" event received', data)
-      this.setCallStatus(CALL_STATUS_IDLE);
       // const originator: string = data.originator;
       // const reason: string = data.cause;
       if(this._inputMediaStream) {
         this._mediaEngine.closeStream(this._inputMediaStream);
         this.setInputMediaStream(null);
       }
+      this._endType = 'failure';
+      this._errorCause = `${data.originator}: ${data.cause}`;
+      this.setCallStatus(CALL_STATUS_IDLE);
+      this._eventEmitter.emit('call.ended', {'call': this});
     });
     rtcSession!.on('newDTMF', (data) => {
       this._logger.debug('RTCSession "newDtmf" event received', data)
@@ -604,6 +680,8 @@ export class SipCall {
     });
     rtcSession!.on('reinvite', (data) => {
       this._logger.debug('RTCSession "re-invite" event received', data)
+      // tslint:disable-next-line:no-console
+      console.log("ON session re-invite event");
     });
     rtcSession!.on('update', (data) => {
       this._logger.debug('RTCSession "update" event received', data)

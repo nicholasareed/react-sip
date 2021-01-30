@@ -28,9 +28,10 @@ export class MediaEngine {
   constructor(config: MediaEngineConfig | null) {
     this._isCapturing = false;
     this._availableDevices = [];
+    this._openedStreams = [];
     this._prepareConfig(config);
     this._initDevices();
-    this._initInputStreams();
+    // this._initInputStreams();
   }
 
   // Fetch available devices
@@ -75,6 +76,10 @@ export class MediaEngine {
             mediaStream.removeTrack(track);
           }
         });
+
+        if(Object.keys(opts).length === 0) {
+          return Promise.resolve(mediaStream);
+        }
 
         return navigator.mediaDevices.getUserMedia(opts).then((unattachedStream) => {
           unattachedStream.getTracks().forEach((track) => {
@@ -163,6 +168,7 @@ export class MediaEngine {
 
   _startStreams = (mediaStream: MediaStream): MediaStream => {
     const newStream = new MediaStream();
+
     mediaStream.getTracks().forEach((track) => {
       newStream.addTrack(track.clone());
     })

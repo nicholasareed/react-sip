@@ -53,27 +53,31 @@ export const sipPropType = PropTypes.shape({
   debugNamespaces: PropTypes.string,
 });
 
-export interface Call {
-  id: string;
-  status: string;
-  direction: string;
-  counterpart: string;
+export interface CallInfo {
+  _id: string,
+  _direction: string,
+  _remoteUri: string,
+  _callStatus: string,
+  _isActive: boolean,
+  _mediaSessionStatus: string,
+  _startTime: string,
+  _endTime: string,
+  _endMode: string,
+  _errorReason: string,
 }
 
-export const callPropType = PropTypes.shape({
-  id: PropTypes.string,
-  status: PropTypes.string,
-  direction: PropTypes.string,
-  counterpart: PropTypes.string,
-  isOnHold: PropTypes.bool,
-  hold: PropTypes.func,
-  unhold: PropTypes.func,
-  toggleHold: PropTypes.func,
-  microphoneIsMuted: PropTypes.bool,
-  muteMicrophone: PropTypes.func,
-  unmuteMicrophone: PropTypes.func,
-  toggleMuteMicrophone: PropTypes.func,
-});
+export const callInfoListPropType = PropTypes.arrayOf(PropTypes.shape({
+  _id: PropTypes.string,
+  _direction: PropTypes.string,
+  _remoteUri: PropTypes.string,
+  _status: PropTypes.string,
+  _isActive: PropTypes.bool,  // is call Active
+  _mediaSessionStatus: PropTypes.string,  // 'active', 'local hold', 'remote hold'
+  _startTime: PropTypes.string,
+  _endTime: PropTypes.string,
+  _endMode: PropTypes.string, // 'hangup' | 'failure'
+  _errorReason: PropTypes.string,
+}));
 
 export interface DtmfOptions {
   duration: number,
