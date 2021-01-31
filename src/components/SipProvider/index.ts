@@ -432,7 +432,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     const { callList } = this.state;
     callList.forEach((call) => {
       if(call.getId() === callId) {
-        call.reject(486, "Busy")
+        call.reject(486, "Busy Here")
       }
     })
   }
@@ -527,14 +527,15 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       this.ua = null;
     }
     const {
-      // socket,
+      uri,
+      socket,
       // realm,
       // host,
       // port,
       // pathname,
       // secure,
       user,
-      // password,
+      password,
       autoRegister,
     } = this.props;
 
@@ -549,16 +550,14 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     try {
       // const socket = new JsSIP.WebSocketInterface(`${secure ? 'wss' : 'ws'}://${host}:${port}${pathname}`);
       // const socketJsSip = new JsSIP.WebSocketInterface(socket);
-      const socketJsSip = new JsSIP.WebSocketInterface('wss://tokdesk.com:7443');
+      const socketJsSip = new JsSIP.WebSocketInterface(socket);
       this.ua = new JsSIP.UA({
         // NOT CORRECT
         // Modify to user@domain
-        uri: `sip:202@tokdesk.com`,
-        // uri: `${user}@${realm}`,
-        authorization_user: '202',
+        uri,
+        authorization_user: user,
         // realm,
-        password: 'S1pF0rAll',
-        // contact_uri: 'sip:202@tokdesk.com',
+        password,
         sockets: [socketJsSip],
         register: autoRegister,
         session_timers: this.uaConfig?.sessionTimers,

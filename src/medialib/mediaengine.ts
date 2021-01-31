@@ -1,9 +1,9 @@
-import {MediaTone} from "..";
+import {MediaTone, WebAudioHTMLMediaElement} from "..";
 
 export interface MediaConfig {
   enabled: boolean,
   deviceIds: string[],
-  element: HTMLMediaElement | null,
+  element: WebAudioHTMLMediaElement | null,
 }
 export interface MediaEngineConfig {
   audio: {
@@ -24,11 +24,13 @@ export class MediaEngine {
   _availableDevices: MediaDeviceInfo[];
   _openedStreams: MediaStream[];
   _isCapturing: boolean;
+  _supportedDeviceTypes: string[];
 
   constructor(config: MediaEngineConfig | null) {
     this._isCapturing = false;
     this._availableDevices = [];
     this._openedStreams = [];
+    this._supportedDeviceTypes = ['audioinput', 'audiooutput', 'videoinput'];
     this._prepareConfig(config);
     this._initDevices();
     // this._initInputStreams();
@@ -104,6 +106,40 @@ export class MediaEngine {
     })
   }
 
+  addTrack = (mediaStream: MediaStream, track: MediaStreamTrack): void => {
+    // check if track is already present or not
+    const trackExists = mediaStream.getTracks().find((t) => t.id === track.id);
+    if(!trackExists) {
+      mediaStream.addTrack(track);
+    }
+    // @ts-ignore
+    const element = this._config[track.kind]['out'].element;
+    if(element) {
+      element.srcObject = mediaStream;
+      element.play()
+        .then(() => {
+          // log
+        })
+        .catch((err) => {
+          // log
+        })
+    }
+  }
+  startOutputStream = (mediaStream: MediaStream): void => {
+    // @ts-ignore
+    const element = this._config['audio']['out'].element;
+    if(element) {
+      element.srcObject = mediaStream;
+      element.play()
+        .then(() => {
+          // log
+        })
+        .catch((err) => {
+          // log
+        })
+    }
+  }
+
   closeAll = () => {
     // close all opened streams
     this._openedStreams.forEach((mediaStream) => {
@@ -131,6 +167,24 @@ export class MediaEngine {
   playTone = (tone: MediaTone): void => {
     // play tone to the output device
   }
+  hasDeviceExists = (deviceKind: string, deviceId: string | null): boolean => {
+    const isValid = this._supportedDeviceTypes.includes(deviceKind);
+    if(!isValid) {
+      throw Error("UnSupported Device Kind");
+    }
+    let deviceInfo = this._availableDevices.find((device) => device.kind === deviceKind);
+    if(deviceInfo && deviceInfo !== undefined) {
+      if(deviceId) {
+        deviceInfo = this._availableDevices.find((device) =>
+          device.kind === deviceKind && device.deviceId === deviceId);
+        if(deviceInfo === undefined) {
+          return false
+        }
+      }
+      return true;
+    }
+    return false;
+  }
 
   _prepareConfig(config: MediaEngineConfig | null) {
     if(!config) {
@@ -144,7 +198,7 @@ export class MediaEngine {
           },
           out: {
             enabled: true,
-            deviceIds: [],
+            deviceIds: ['default'],
             element: null,
           },
         },
@@ -161,8 +215,37 @@ export class MediaEngine {
           },
         },
       };
+      const audioOut = this._config.audio.out;
+      audioOut.element = window.document.createElement('audio') as WebAudioHTMLMediaElement;
+      audioOut.element!.setSinkId(audioOut.deviceIds[0]);
+      audioOut.element.autoplay = true;
     } else {
-      this._config = config;
+      let deviceId: string | null = null;
+      if(config.audio.in.enabled) {
+        if (config.audio.in.deviceIds.length > 0) {
+          deviceId = config.audio.in.deviceIds[0];
+        }
+        if(!this.hasDeviceExists('audioinput', deviceId)) {
+          throw Error("Audio input is enabled but device is not available");
+        }
+      }
+      if(config.audio.out.enabled) {
+        if(config.audio.out.deviceIds.length > 0) {
+          deviceId = config.audio.out.deviceIds[0];
+        }
+        if(!this.hasDeviceExists('audiooutput', deviceId)) {
+          throw Error("Audio output is enabled but device is not available");
+        }
+      }
+      if(config.video.in.enabled) {
+        if(config.video.in.deviceIds.length > 0) {
+          deviceId = config.video.in.deviceIds[0];
+        }
+        if(!this.hasDeviceExists('videoinput', deviceId)) {
+          throw Error("Video input is enabled but device is not available");
+        }
+      }
+      Object.assign(this._config, config);
     }
   }
 
@@ -206,26 +289,20 @@ export class MediaEngine {
   }
 
   _initDevices = (): void => {
-    const options = {
-      audio: true,
-      video: true,
-    }
-    navigator.mediaDevices.getUserMedia(options)
-      .then((mediaStream) => {
-        navigator.mediaDevices.enumerateDevices()
-          .then((devices) => {
-            devices.forEach((deviceInfo) => {
-              this._availableDevices.push(deviceInfo);
-            });
-          })
-          .catch((err) => {
-            // log error
-          })
+    navigator.mediaDevices.enumerateDevices()
+      .then((devices) => {
+        devices.forEach((deviceInfo) => {
+          const isRequired = ['audioinput', 'audiooutput', 'videoinput'].includes(deviceInfo.kind);
+          if(isRequired) {
+            this._availableDevices.push(deviceInfo);
+          }
+        });
       })
       .catch((err) => {
         // log error
+        // tslint:disable-next-line:no-console
+        console.log(`Enumerate devices error ${err.cause}`);
       })
-
     // CHROME: Media element
   }
 
@@ -252,18 +329,6 @@ export class MediaEngine {
       };
     }
     return constraints;
-  }
-  _hasInputDevieExists = (trackKind: string): boolean => {
-    let deviceInfo: MediaDeviceInfo | null | undefined = null;
-    if(trackKind === 'audio') {
-      deviceInfo = this._availableDevices.find((device) => device.kind === 'audioinput');
-    } else if(trackKind === 'video') {
-      deviceInfo = this._availableDevices.find((device) => device.kind === 'audioinput');
-    }
-    if(deviceInfo && deviceInfo !== undefined) {
-      return true;
-    }
-    return false;
   }
   // initialize input streams
   // Only the configured devices

@@ -56,16 +56,17 @@ export class SipCall {
   _debugNamespaces?: string;
   // Media Streams
   _inputMediaStream: MediaStream | null;
-  _outputStreams: OutputMediaStream;
+  _outputMediaStream: MediaStream;
   _peerConnection: RTCPeerConnection | null;
   _mediaEngine: MediaEngine; // Media Engine instance
   _eventEmitter: EventEmitter;
   // call variables
-  _startTime: Date | undefined;
-  _endTime: Date | undefined;
+  _startTime: string | undefined;
+  _endTime: string | undefined;
   _remoteUri: string;
   _endType: 'hangup' | 'failure' | 'none';
   _errorCause: string;
+  _isPlaying: boolean;
 
   constructor(isDialing: boolean,
               callConfig: SipCallConfig,
@@ -83,6 +84,7 @@ export class SipCall {
     this._endType = 'none';
     this._errorCause = '';
     this._id = this._uuid();
+    this._isPlaying = false;
     this._init(isDialing);
   }
 
@@ -93,13 +95,7 @@ export class SipCall {
       this.setCallStatus(CALL_STATUS_RINGING);
     }
     this._configureDebug();
-    this._outputStreams = {
-      mediaStream: new MediaStream(),
-      elements: {
-        audio: document.createElement('audio'),
-        video: document.createElement('video'),
-      }
-    };
+    this._outputMediaStream = new MediaStream();
   }
 
   getId = (): string => {
@@ -188,10 +184,10 @@ export class SipCall {
     return (this._callStatus === CALL_STATUS_RINGING);
   }
 
-  startTime = (): Date | undefined => {
+  startTime = (): string | undefined => {
     return this._startTime;
   }
-  endTime = (): Date | undefined => {
+  endTime = (): string | undefined => {
     return this._endTime;
   }
   remoteUri = (): string => {
@@ -516,22 +512,23 @@ export class SipCall {
   }
 
   _handleRemoteTrack = (track: MediaStreamTrack): void => {
-    const outMediaStream = this._outputStreams.mediaStream;
-    // check if track is already present or not
-    const trackExists = outMediaStream.getTracks().find((t) => t.id === track.id);
-    if(!trackExists) {
-      outMediaStream.addTrack(track);
-    }
-    const element = this._outputStreams.elements[track.kind];
-    if(element && element.srcObject.id !== outMediaStream.id) {
-      element.srcObject = outMediaStream;
-    }
+    this._mediaEngine.addTrack(this._outputMediaStream, track);
   }
 
   _initSessionEventHandler = (): void => {
     const rtcSession = this.getRTCSession();
     if(!this.isSessionActive()) {
       throw Error(`SM Init failed - Session is not ACTIVE`);
+    }
+
+    if(rtcSession?.connection) {
+      const peerConnection = rtcSession.connection;
+      peerConnection.addEventListener('track', (event: RTCTrackEvent) => {
+        // tslint:disable-next-line:no-console
+        console.log("ON track event");
+        this._logger.debug('PeerConnection "ontrack" event received');
+        this._handleRemoteTrack(event.track);
+      })
     }
 
     rtcSession!.on('peerconnection', (data) => {
@@ -541,11 +538,22 @@ export class SipCall {
       this._logger.debug('RTCSession "peerconnection" event received', data)
       // pass the event to the provider
       this.setPeerConnection(data.peerconnection);
-      data.peerconnection.addEventListener('ontrack', (event: RTCTrackEvent) => {
+      data.peerconnection.addEventListener('track', (event: RTCTrackEvent) => {
+        // tslint:disable-next-line:no-console
+        console.log("ON track event");
         this._logger.debug('PeerConnection "ontrack" event received');
         this._handleRemoteTrack(event.track);
       })
+      /*
+      data.peerconnection.addEventListener('addstream', (event) => {
+        // tslint:disable-next-line:no-console
+        console.log("add stream event");
+        this._logger.debug('PeerConnection "addstream" event received');
+        this._mediaEngine.startOutputStream(this._outputMediaStream);
+      })
+       */
     });
+
 
     // CONNECTING EVENT
     rtcSession!.on('connecting', (data) => {
@@ -573,7 +581,9 @@ export class SipCall {
       // tslint:disable-next-line:no-console
       console.log("ON session accepted event");
       this._logger.debug('RTCSession "accepted" event received', data)
-      this._startTime = rtcSession?.start_time;
+      if (rtcSession?.start_time && rtcSession.start_time !== undefined) {
+        this._startTime = rtcSession?.start_time.toString();
+      }
       this.setCallStatus(CALL_STATUS_CONNECTING);
       this._eventEmitter.emit('call.update', {'call': this});
     });
@@ -594,7 +604,9 @@ export class SipCall {
         this._mediaEngine.closeStream(this._inputMediaStream);
         this.setInputMediaStream(null);
       }
-      this._endTime = rtcSession?.end_time;
+      if(rtcSession?.end_time && rtcSession.end_time !== undefined) {
+        this._endTime = rtcSession?.end_time.toString();
+      }
       this._endType = 'hangup';
       this.setCallStatus(CALL_STATUS_IDLE);
       this._eventEmitter.emit('call.ended', {'call': this});
