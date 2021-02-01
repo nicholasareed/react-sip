@@ -79,7 +79,6 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     unregisterSip: PropTypes.func,
     // CALL
     makeCall: PropTypes.func,
-    sendDTMF: PropTypes.func,
     muteCall: PropTypes.func,
     unMuteCall: PropTypes.func,
   };
@@ -178,7 +177,6 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       // setAudioSinkId: this.setAudioSinkId,
       // CALL RELATED
       makeCall: this.makeCall.bind(this),
-      sendDTMF: this.sendDTMF.bind(this),
       muteCall: this.muteCall.bind(this),
       unMuteCall: this.unMuteCall.bind(this),
     };
@@ -401,15 +399,6 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
 
     return sipCall.getId();
   }
-
-  sendDTMF = (callId: string, tones: string) => {
-    this.state.callList.forEach((call) => {
-      if(call.getId() === callId) {
-        call.sendDTMF(tones);
-        // remove from call list after event
-      }
-    });
-  };
 
   // RTCSession provides mute on the session
   muteCall = (callId: string) => {

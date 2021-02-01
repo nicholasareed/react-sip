@@ -337,6 +337,15 @@ export class SipCall {
         `Calling sendDTMF() is not allowed when call status is ${this.getCallStatus()}`,
       );
     }
+    // DTMF should not be send while on hold
+    // Allow for local hold (SEND ONLY) ??
+    if(this._mediaSessionStatus === MEDIA_SESSION_STATUS_SENDONLY ||
+       this._mediaSessionStatus === MEDIA_SESSION_STATUS_RECVONLY ||
+       this._mediaSessionStatus === MEDIA_SESSION_STATUS_INACTIVE) {
+      this._logger.error('DTMF is not allowed while call is on hold');
+      return;
+    }
+
     const options = {
       duration: this.getDtmfOptions().duration,
       interToneGap: this.getDtmfOptions().interToneGap,
@@ -364,18 +373,21 @@ export class SipCall {
 
   hold = (): void => {
     if(!this.isSessionActive()) {
-      throw new Error("RtcSession is not active");
+      this._logger.error("RTCSession is not active");
+      return;
     }
     if(this.getCallStatus() !== CALL_STATUS_ACTIVE) {
-      throw new Error(
+      this._logger.error(
         `Calling hold() is not allowed when call status is ${this.getCallStatus()}`,
       );
+      return;
     }
     if(this.getMediaSessionStatus() === MEDIA_SESSION_STATUS_SENDONLY ||
        this.getMediaSessionStatus() === MEDIA_SESSION_STATUS_INACTIVE) {
-      throw new Error(
+      this._logger.error(
         `Calling hold() is not allowed when call is already on local hold`,
       );
+      return;
     }
     const options = {
       useUpdate: false, // UPDATE based hold is not supported by most vendors
@@ -387,18 +399,17 @@ export class SipCall {
 
   unhold = (): void => {
     if(!this.isSessionActive()) {
-      throw new Error("RtcSession is not active");
+      this._logger.error("RTC Session is not valid");
+      return;
     }
     if(this.getCallStatus() !== CALL_STATUS_ACTIVE) {
-      throw new Error(
-        `Calling unhold() is not allowed when call status is ${this.getCallStatus()}`,
-      );
+      this._logger.error(`Calling unhold() is not allowed when call status is ${this.getCallStatus()}`);
+      return;
     }
     if(this.getMediaSessionStatus() !== MEDIA_SESSION_STATUS_SENDONLY &&
        this.getMediaSessionStatus() !== MEDIA_SESSION_STATUS_INACTIVE) {
-      throw new Error(
-        `Calling unhold() is not allowed when call is not on local hold`,
-      );
+      this._logger.error(`Calling unhold() is not allowed when call is not on hold`);
+      return;
     }
     const options = {
       useUpdate: false, // UPDATE based hold is not supported by most vendors
@@ -406,7 +417,7 @@ export class SipCall {
     };
     this.getRTCSession()!.unhold(options);
   }
-
+  // toggle between hold
   toggleHold = (): void => {
     if(this.isOnLocalHold()) {
       this.unhold();
@@ -465,12 +476,10 @@ export class SipCall {
 
   isOnLocalHold = (): boolean => {
     if(!this.isSessionActive()) {
-      throw new Error("RtcSession is not active");
+      return false;
     }
     if(this.getCallStatus() !== CALL_STATUS_ACTIVE) {
-      throw new Error(
-        `Checking hold status is not allowed when call status is ${this.getCallStatus()}`,
-      );
+      return false;
     }
     const holdStatus = this.getRTCSession()!.isOnHold();
     if(holdStatus) {
@@ -481,12 +490,10 @@ export class SipCall {
 
   isOnRemoteHold = (): boolean => {
     if(!this.isSessionActive()) {
-      throw new Error("RtcSession is not active");
+      return false;
     }
     if(this.getCallStatus() !== CALL_STATUS_ACTIVE) {
-      throw new Error(
-        `Checking hold status is not allowed when call status is ${this.getCallStatus()}`,
-      );
+      return false;
     }
     const holdStatus = this.getRTCSession()!.isOnHold();
     if(holdStatus) {
