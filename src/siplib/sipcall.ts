@@ -407,6 +407,14 @@ export class SipCall {
     this.getRTCSession()!.unhold(options);
   }
 
+  toggleHold = (): void => {
+    if(this.isOnLocalHold()) {
+      this.unhold();
+    } else {
+      this.hold();
+    }
+  }
+
   renegotiate = (): boolean => {
     if(!this.isSessionActive()) {
       throw new Error("RtcSession is not active");
@@ -467,9 +475,8 @@ export class SipCall {
     const holdStatus = this.getRTCSession()!.isOnHold();
     if(holdStatus) {
       return holdStatus.local;
-    } else {
-      return false;
     }
+    return false;
   }
 
   isOnRemoteHold = (): boolean => {
@@ -594,6 +601,7 @@ export class SipCall {
       console.log("ON session confirmed event");
       this._logger.debug('RTCSession "confirmed" event received', data)
       this.setCallStatus(CALL_STATUS_ACTIVE);
+      this.setMediaSessionStatus(MEDIA_SESSION_STATUS_ACTIVE);
       this._eventEmitter.emit('call.update', {'call': this});
     });
     rtcSession!.on('ended', (data) => {
@@ -614,6 +622,7 @@ export class SipCall {
       }
       this._endType = 'hangup';
       this.setCallStatus(CALL_STATUS_IDLE);
+      this.setMediaSessionStatus(MEDIA_SESSION_STATUS_IDLE);
       this._eventEmitter.emit('call.ended', {'call': this});
     });
     rtcSession!.on('failed', (data) => {
@@ -629,6 +638,7 @@ export class SipCall {
       this._endType = 'failure';
       this._errorCause = `${data.originator}: ${data.cause}`;
       this.setCallStatus(CALL_STATUS_IDLE);
+      this.setMediaSessionStatus(MEDIA_SESSION_STATUS_IDLE);
       this._eventEmitter.emit('call.ended', {'call': this});
     });
     rtcSession!.on('newDTMF', (data) => {
@@ -656,6 +666,7 @@ export class SipCall {
         }
       }
       // Notify app - so app can play tones if required
+      this._eventEmitter.emit('call.update', {'call': this});
     });
     rtcSession!.on('unhold', (data) => {
       const originator = data.originator;
@@ -675,6 +686,7 @@ export class SipCall {
           this.setMediaSessionStatus(MEDIA_SESSION_STATUS_RECVONLY);
         }
       }
+      this._eventEmitter.emit('call.update', {'call': this});
     });
     rtcSession!.on('muted', (data) => {
       const { audio, video } = data;
