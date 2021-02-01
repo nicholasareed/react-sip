@@ -104,6 +104,12 @@ export class MediaEngine {
       track.enabled = false;
       track.stop();
     })
+    // tslint:disable-next-line:no-console
+    console.log(this._openedStreams);
+    const index = this._openedStreams.findIndex((item) => item.id === mediaStream.id);
+    if(index !== -1) {
+      this._openedStreams.splice(index, 1);
+    }
   }
 
   addTrack = (mediaStream: MediaStream, track: MediaStreamTrack): void => {

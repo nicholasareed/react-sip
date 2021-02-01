@@ -79,12 +79,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     unregisterSip: PropTypes.func,
     // CALL
     makeCall: PropTypes.func,
-    acceptCall: PropTypes.func,
-    rejectCall: PropTypes.func,
     sendDTMF: PropTypes.func,
-    hangup: PropTypes.func,
-    holdCall: PropTypes.func,
-    unHoldCall: PropTypes.func,
     muteCall: PropTypes.func,
     unMuteCall: PropTypes.func,
   };
@@ -183,12 +178,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       // setAudioSinkId: this.setAudioSinkId,
       // CALL RELATED
       makeCall: this.makeCall.bind(this),
-      acceptCall: this.acceptCall.bind(this),
-      rejectCall: this.rejectCall.bind(this),
       sendDTMF: this.sendDTMF.bind(this),
-      hangup: this.hangup.bind(this),
-      holdCall: this.holdCall.bind(this),
-      unHoldCall: this.unHoldCall.bind(this),
       muteCall: this.muteCall.bind(this),
       unMuteCall: this.unMuteCall.bind(this),
     };
@@ -196,10 +186,11 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
 
   initProperties = () : void => {
     this.uaConfig = {
+      host: this.props.host,
       sessionTimers: true,
       registerExpires: 600,
       // registrar: this.props.registrar,
-      userAgent: 'KlipPhone UA v0.1', // Change this to one from props
+      userAgent: 'CioPhone UA v0.1', // Change this to one from props
     };
     // initialize sip call config
     this.callConfig = {
@@ -218,7 +209,6 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     };
     // initialize the media engine
     this.mediaEngine = new MediaEngine(null);
-
   }
   getCallConfig = (): SipCallConfig | null => {
     return this.callConfig;
@@ -375,7 +365,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     this.ua.unregister(options);
   }
 
-  makeCall = (callee: string, isVideoCall: boolean, anonymous?: boolean): string => {
+  makeCall = (callee: string, isVideoCall: boolean): string => {
     if (!callee) {
       throw new Error(`Destination must be defined (${callee} given)`);
     }
@@ -388,19 +378,13 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     if(!this.isDialReady()) {
       throw new Error(`Max limit reached, new calls are not allowed`);
     }
-    if (!anonymous) {
-      anonymous = false;
-    }
     // check if any active calls are present or not
     const { callList } = this.state;
-    callList.forEach((call) => {
-      // check if call & media session is active
-      if(call.isActive() && !call.isOnLocalHold())  {
-        // TODO : Auto Hold
-        throw new Error(`An active call found, hold the call before making new call`);
-      }
-    });
-
+    const activeCall = callList.find((item) => item.isMediaActive());
+    if(activeCall) {
+      // TODO : Auto Hold
+      throw new Error(`An active call found, hold the call before making new call`);
+    }
     // create sip call configuartion
     const rtcConfig = this.getRTCConfig();
     const dtmfOptions = this.getDtmfOptions();
@@ -418,35 +402,6 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     return sipCall.getId();
   }
 
-  acceptCall = (callId: string, isVideoCall: boolean): void => {
-    const {callList} = this.state;
-    const incomingCall = callList.find((call) => {
-      return call.getId() === callId;
-    })
-    if (incomingCall && incomingCall !== undefined) {
-      incomingCall.accept(true, true);
-    }
-  }
-
-  rejectCall = (callId: string): void => {
-    const { callList } = this.state;
-    callList.forEach((call) => {
-      if(call.getId() === callId) {
-        call.reject(486, "Busy Here")
-      }
-    })
-  }
-
-  hangup = (callId: string) => {
-    this.state.callList.forEach((call) => {
-      if(call.getId() === callId) {
-        call.hangup();
-        // remove from call list after event
-      }
-    });
-    // TODO close all the media streams
-  };
-
   sendDTMF = (callId: string, tones: string) => {
     this.state.callList.forEach((call) => {
       if(call.getId() === callId) {
@@ -456,22 +411,6 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     });
   };
 
-  // Hold Call
-  holdCall = (callId: string) => {
-    this.state.callList.forEach((call) => {
-      if(call.getId() === callId) {
-        call.hold();
-      }
-    });
-  }
-  // Unhold Call
-  unHoldCall = (callId: string) => {
-    this.state.callList.forEach((call) => {
-      if(call.getId() === callId) {
-        call.unhold();
-      }
-    });
-  }
   // RTCSession provides mute on the session
   muteCall = (callId: string) => {
     this.state.callList.forEach((call) => {
@@ -481,6 +420,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       }
     });
   }
+
   unMuteCall = (callId: string) => {
     this.state.callList.forEach((call) => {
       if(call.getId() === callId) {
@@ -489,6 +429,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       }
     });
   }
+
   // Clear all existing sessions from the UA
   terminateAll = () => {
     if(!this.ua) {

@@ -12,6 +12,7 @@ import {
   CallStatus,
   // MEDIA_DEVICE_STATUS_ACTIVE,
   // MEDIA_DEVICE_STATUS_MUTE,
+  MEDIA_SESSION_STATUS_IDLE,
   MEDIA_SESSION_STATUS_ACTIVE,
   MEDIA_SESSION_STATUS_INACTIVE,
   MEDIA_SESSION_STATUS_RECVONLY,
@@ -95,6 +96,7 @@ export class SipCall {
       this.setCallStatus(CALL_STATUS_RINGING);
     }
     this._configureDebug();
+    this._mediaSessionStatus = MEDIA_SESSION_STATUS_IDLE;
     this._outputMediaStream = new MediaStream();
   }
 
@@ -183,7 +185,6 @@ export class SipCall {
   isRinging = (): boolean => {
     return (this._callStatus === CALL_STATUS_RINGING);
   }
-
   startTime = (): string | undefined => {
     return this._startTime;
   }
@@ -241,7 +242,7 @@ export class SipCall {
         extraHeaders: this.getExtraHeaders().invite,
         sessionTimersExpires: this.getSessionTimerExpires(),
       };
-
+      this._remoteUri = target;
       this.setCallStatus(CALL_STATUS_DIALING);
       this._eventEmitter.emit('call.update', {'call': this});
       ua.call(target, opts);
@@ -281,7 +282,7 @@ export class SipCall {
   }
 
   // REJECT incoming call
-  reject = (code: number, reason: string): void => {
+  reject = (code: number=486, reason: string='Busy Here'): void => {
     if(!this.isSessionActive()) {
       throw new Error("RtcSession is not active");
     }
@@ -322,6 +323,7 @@ export class SipCall {
     const inputStream = this.getInputMediaStream();
     if(inputStream) {
       this._mediaEngine.closeStream(inputStream);
+      this.setInputMediaStream(null);
     }
   }
 
@@ -603,6 +605,9 @@ export class SipCall {
       if(this._inputMediaStream) {
         this._mediaEngine.closeStream(this._inputMediaStream);
         this.setInputMediaStream(null);
+      }
+      if(this._outputMediaStream) {
+        this._mediaEngine.closeStream(this._outputMediaStream);
       }
       if(rtcSession?.end_time && rtcSession.end_time !== undefined) {
         this._endTime = rtcSession?.end_time.toString();
