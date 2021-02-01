@@ -73,7 +73,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     getCalls: PropTypes.func,
     // Status
     isLineConnected: PropTypes.func,
-    isLineReady: PropTypes.func,
+    isRegistered: PropTypes.func,
     // REGISTER
     registerSip: PropTypes.func,
     unregisterSip: PropTypes.func,
@@ -171,7 +171,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       callHistory: [...this.state.callHistory],
       getCalls: this.getCalls.bind(this),
       isLineConnected: this.isLineConnected.bind(this),
-      isLineReady: this.isLineReady.bind(this),
+      isRegistered: this.isRegistered.bind(this),
       registerSip: this.registerSip.bind(this),
       unregisterSip: this.unregisterSip.bind(this),
       // audioSinkId: this.audioSinkId,
@@ -304,7 +304,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     }
     return false;
   }
-  isLineReady = (): boolean => {
+  isRegistered = (): boolean => {
     if (this.state.sipStatus === SIP_STATUS_REGISTERED) {
       return true;
     }
@@ -372,7 +372,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     if (!this.ua) {
       throw new Error("Calling startCall is not allowed when JsSIP.UA isn't initialized");
     }
-    if(!this.isLineReady()) {
+    if(!this.isRegistered()) {
       throw new Error(`Phone connection is not active, current state - ${this.state.sipStatus}`);
     }
     if(!this.isDialReady()) {
