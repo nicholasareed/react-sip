@@ -19,7 +19,8 @@
         ],
         "newLine": "lf",
         "outDir": "dist",
-        "rootDir": "src"
+        "rootDir": "src",
+        "resolveJsonModule": true
     },
     "include": [
         "src"

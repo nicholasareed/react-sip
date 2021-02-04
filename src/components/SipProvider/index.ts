@@ -3,25 +3,24 @@ import * as React from 'react';
 import * as JsSIP from 'jssip';
 import * as EventEmitter from 'eventemitter3';
 import { UnRegisterOptions } from 'jssip/lib/UA';
-import {MediaEngine} from "../../medialib/mediaengine"
+import { MediaEngine } from '../../medialib/mediaengine'
 import dummyLogger from '../../lib/dummyLogger';
-import { SipUAConfig, SipExtraHeaders } from "../../siplib/sipua";
+import { SipUAConfig, SipExtraHeaders } from '../../siplib/sipua';
+import { DtmfOptions, SipCall, SipCallConfig } from "../../siplib/sipcall";
 import {
-  DtmfOptions,
-  SipCall,
-  SipCallConfig,
-} from "../../siplib/sipcall";
-import {
+  LINE_STATUS_CONNECTED,
+  LINE_STATUS_CONNECTING,
+  LINE_STATUS_DISCONNECTED,
+  SIP_STATUS_ERROR,
+  SIP_STATUS_REGISTERED,
+  SIP_STATUS_UNREGISTERED,
+  SIP_ERROR_TYPE_NONE,
   SIP_ERROR_TYPE_CONFIGURATION,
   SIP_ERROR_TYPE_CONNECTION,
   SIP_ERROR_TYPE_REGISTRATION,
-  SIP_STATUS_CONNECTED,
-  SIP_STATUS_CONNECTING,
-  SIP_STATUS_DISCONNECTED,
-  SIP_STATUS_ERROR,
-  SIP_STATUS_REGISTERED,
   SipErrorType,
   SipStatus,
+  LineStatus,
 } from '../../lib/enums';
 import {
   extraHeadersPropType,
@@ -31,7 +30,7 @@ import {
   WebAudioHTMLMediaElement,
   callInfoListPropType,
 } from '../../lib/types';
-import {DTMF_TRANSPORT} from "jssip/lib/Constants";
+import { DTMF_TRANSPORT } from "jssip/lib/Constants";
 
 export interface JsSipConfig {
   socket: string;
@@ -53,14 +52,15 @@ export interface JsSipConfig {
   maxAllowedCalls: number;
   debug: boolean;
   debugNamespaces?: string | null;
-  registrar?: string,
+  registrar?: string;
   // TODO: Phone event handlers
 }
 
 export interface JsSipState {
+  lineStatus: LineStatus;
   sipStatus: SipStatus;
-  sipErrorType: SipErrorType | null;
-  sipErrorMessage: string | null;
+  errorType: SipErrorType;
+  errorMessage: string;
   callList: SipCall[];
   callHistory: SipCall[];
 }
@@ -70,17 +70,16 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     sip: sipPropType,
     calls: callInfoListPropType,
     callHistory: callInfoListPropType,
-    getCalls: PropTypes.func,
     // Status
     isLineConnected: PropTypes.func,
     isRegistered: PropTypes.func,
+    hasError: PropTypes.func,
+    getErrorMessage: PropTypes.func,
     // REGISTER
     registerSip: PropTypes.func,
     unregisterSip: PropTypes.func,
     // CALL
     makeCall: PropTypes.func,
-    muteCall: PropTypes.func,
-    unMuteCall: PropTypes.func,
   };
 
   static propTypes = {
@@ -136,21 +135,22 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
   // private currentSinkId: string | null = null;
   // @ts-ignore
   private isPlaying = false;
-  private mediaEngine: MediaEngine | null = null;
+  private mediaEngine: MediaEngine;
   // @ts-ignore
   private uaConfig: SipUAConfig | null = null;
-  private callConfig: SipCallConfig | null = null;
-  private rtcConfig: RTCConfiguration | null = null;
-  private dtmfOptions: DtmfOptions | null = null;
-  private eventBus: EventEmitter | null = null;
+  private callConfig: SipCallConfig;
+  private rtcConfig: RTCConfiguration;
+  private dtmfOptions: DtmfOptions;
+  private eventBus: EventEmitter;
 
   constructor(props) {
     super(props);
     // console.log('reactsip: constructor Sipprovider');
     this.state = {
-      sipStatus: SIP_STATUS_DISCONNECTED,
-      sipErrorType: null,
-      sipErrorMessage: null,
+      lineStatus: LINE_STATUS_DISCONNECTED,
+      sipStatus: SIP_STATUS_UNREGISTERED,
+      errorType: SIP_ERROR_TYPE_NONE,
+      errorMessage: '',
       callList: [],
       callHistory: [],
     };
@@ -163,26 +163,25 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       sip: {
         ...this.props,
         status: this.state.sipStatus,
-        errorType: this.state.sipErrorType,
-        errorMessage: this.state.sipErrorMessage,
+        errorType: this.state.errorType,
+        errorMessage: this.state.errorMessage,
       },
       calls: [...this.state.callList],
       callHistory: [...this.state.callHistory],
-      getCalls: this.getCalls.bind(this),
       isLineConnected: this.isLineConnected.bind(this),
       isRegistered: this.isRegistered.bind(this),
+      hasError: this.hasError.bind(this),
+      getErrorMessage: this.getErrorMessage.bind(this),
       registerSip: this.registerSip.bind(this),
       unregisterSip: this.unregisterSip.bind(this),
       // audioSinkId: this.audioSinkId,
       // setAudioSinkId: this.setAudioSinkId,
       // CALL RELATED
       makeCall: this.makeCall.bind(this),
-      muteCall: this.muteCall.bind(this),
-      unMuteCall: this.unMuteCall.bind(this),
     };
   }
 
-  initProperties = () : void => {
+  initProperties = (): void => {
     this.uaConfig = {
       host: this.props.host,
       sessionTimers: true,
@@ -203,27 +202,26 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     this.dtmfOptions = {
       duration: 100,
       interToneGap: 500,
-      channelType: DTMF_TRANSPORT.RFC2833,  // INFO based ??
+      channelType: DTMF_TRANSPORT.RFC2833, // INFO based ??
     };
     // initialize the media engine
     this.mediaEngine = new MediaEngine(null);
-  }
-  getCallConfig = (): SipCallConfig | null => {
+  };
+  getCallConfig = (): SipCallConfig => {
     return this.callConfig;
-  }
-  getRTCConfig = (): RTCConfiguration | null => {
+  };
+  getRTCConfig = (): RTCConfiguration => {
     return this.rtcConfig;
-  }
-  getDtmfOptions = (): DtmfOptions | null => {
+  };
+  getDtmfOptions = (): DtmfOptions => {
     return this.dtmfOptions;
-  }
+  };
   /**
    * Get the underlying UserAgent from JsSIP
    */
   getUA(): JsSIP.UA | null {
     return this.ua;
   }
-
   getUAOrFail(): JsSIP.UA {
     const ua = this.getUA();
     if (!ua) {
@@ -280,43 +278,42 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       this.mediaEngine.closeAll();
     }
   }
-  getCalls = (): SipCall[] => {
-    const { callList } = this.state;
-    return [ ...callList ];
-  }
   getActiveCall = (): SipCall | undefined => {
     const { callList } = this.state;
     const activeCall = callList.find((item) => item.isMediaActive() === true);
     return activeCall;
-  }
+  };
   getLastCall = (): SipCall | undefined => {
     const { callList } = this.state;
-    if(callList.length > 0) {
+    if (callList.length > 0) {
       return callList[callList.length - 1];
     }
-  }
-
+  };
   isLineConnected = (): boolean => {
-    if(this.state.sipStatus === SIP_STATUS_CONNECTED) {
-      return true;
-    }
-    return false;
-  }
+    return this.state.lineStatus === LINE_STATUS_CONNECTED;
+  };
   isRegistered = (): boolean => {
-    if (this.state.sipStatus === SIP_STATUS_REGISTERED) {
-      return true;
-    }
-    return false;
-  }
+    return this.state.sipStatus === SIP_STATUS_REGISTERED;
+  };
+  hasError = (): boolean => {
+    return this.state.errorType !== SIP_ERROR_TYPE_NONE;
+  };
+  getErrorMessage = (): string => {
+    return this.state.errorMessage;
+  };
 
   isDialReady = (): boolean => {
-    if(!this.mediaEngine) {
-      this.logger.debug("Media device is not ready")
+    if (!this.mediaEngine) {
+      this.logger.debug('Media device is not ready')
+      return false;
+    }
+    if (!this.isRegistered()) {
+      this.logger.error('Sip device is not registered with the network');
       return false;
     }
     // check if max call limit has reached
-    if(this.state.callList.length >= this.props.maxAllowedCalls) {
-      this.logger.debug("Max allowed call limit has reached")
+    if (this.state.callList.length >= this.props.maxAllowedCalls) {
+      this.logger.debug('Max allowed call limit has reached')
       return false;
     }
     // check if any calls are in dialing state
@@ -324,40 +321,35 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     const { callList } = this.state;
     const dialled  = callList.find((call) => { return call.isDialing() === true });
     // Already a call is
-    if(dialled && dialled !== undefined) {
-      this.logger.debug("Already a call is in dialled state");
+    if (dialled && dialled !== undefined) {
+      this.logger.debug('Already a call is in dialled state');
       return false;
     }
     // TODO Allow even in dialing state ??
-
     return true;
-  }
+  };
 
   registerSip(): void {
     if (!this.ua) {
-      throw new Error("Calling registerSip is not allowed when JsSIP.UA isn't initialized");
+      throw new Error(`Calling registerSip is not allowed when JsSIP.UA isn't initialized`);
     }
     if (this.props.autoRegister) {
       throw new Error('Calling registerSip is not allowed when autoRegister === true');
     }
-    if (this.state.sipStatus !== SIP_STATUS_CONNECTED) {
+    if (this.state.lineStatus !== LINE_STATUS_CONNECTED) {
       throw new Error(
-        `Calling registerSip is not allowed when sip status is ${this.state.sipStatus} (expected ${SIP_STATUS_CONNECTED})`,
+        `Calling registerSip is not allowed when line status is ${this.state.lineStatus} (expected ${LINE_STATUS_CONNECTED})`,
       );
     }
     this.ua.register();
   }
-
   unregisterSip(options?: UnRegisterOptions): void {
     if (!this.ua) {
       throw new Error("Calling unregisterSip is not allowed when JsSIP.UA isn't initialized");
     }
-    if (this.props.autoRegister) {
-      throw new Error('Calling registerSip is not allowed when autoRegister === true');
-    }
     if (this.state.sipStatus !== SIP_STATUS_REGISTERED) {
       throw new Error(
-        `Calling unregisterSip is not allowed when sip status is ${this.state.sipStatus} (expected ${SIP_STATUS_CONNECTED})`,
+        `Calling unregisterSip is not allowed when sip status is ${this.state.sipStatus} (expected ${SIP_STATUS_REGISTERED})`,
       );
     }
     this.ua.unregister(options);
@@ -370,16 +362,16 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     if (!this.ua) {
       throw new Error("Calling startCall is not allowed when JsSIP.UA isn't initialized");
     }
-    if(!this.isRegistered()) {
-      throw new Error(`Phone connection is not active, current state - ${this.state.sipStatus}`);
+    if (!this.isLineConnected()) {
+      throw new Error(`Phone is not connected to the network, current state - ${this.state.lineStatus}`);
     }
-    if(!this.isDialReady()) {
+    if (!this.isDialReady()) {
       throw new Error(`Max limit reached, new calls are not allowed`);
     }
     // check if any active calls are present or not
     const { callList } = this.state;
     const activeCall = callList.find((item) => item.isMediaActive());
-    if(activeCall) {
+    if (activeCall) {
       // TODO : Auto Hold
       throw new Error(`An active call found, hold the call before making new call`);
     }
@@ -387,45 +379,24 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     const rtcConfig = this.getRTCConfig();
     const dtmfOptions = this.getDtmfOptions();
     // @ts-ignore
-    const sipCall = new SipCall(true, this.getCallConfig(),
-              rtcConfig, dtmfOptions, this.mediaEngine, this.eventBus);
+    const sipCall = new SipCall(true, this.getCallConfig(), rtcConfig, dtmfOptions, this.mediaEngine, this.eventBus);
     const ua = this.getUA();
 
     // create Input MediaStream from MediaDevice
     // @ts-ignore
     sipCall.dial(ua, callee, true, true);
     callList.push(sipCall);
-    this.setState({callList});
+    this.setState({ callList });
 
     return sipCall.getId();
-  }
-
-  // RTCSession provides mute on the session
-  muteCall = (callId: string) => {
-    this.state.callList.forEach((call) => {
-      if(call.getId() === callId) {
-        call.mute();
-        // Media device mute
-      }
-    });
-  }
-
-  unMuteCall = (callId: string) => {
-    this.state.callList.forEach((call) => {
-      if(call.getId() === callId) {
-        call.unmute();
-        // Media device mute
-      }
-    });
-  }
-
+  };
   // Clear all existing sessions from the UA
   terminateAll = () => {
-    if(!this.ua) {
+    if (!this.ua) {
       throw Error(`UA is not connected`);
     }
     this.ua.terminateSessions();
-  }
+  };
   reconfigureDebug(): void {
     const { debug } = this.props;
     if (debug) {
@@ -456,37 +427,23 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       this.ua.stop();
       this.ua = null;
     }
-    const {
-      uri,
-      socket,
-      // realm,
-      // host,
-      // port,
-      // pathname,
-      // secure,
-      user,
-      password,
-      autoRegister,
-    } = this.props;
+    const { socket, user, password, realm, autoRegister } = this.props;
 
     if (!user) {
       this.setState({
-        sipStatus: SIP_STATUS_DISCONNECTED,
-        sipErrorType: null,
-        sipErrorMessage: null,
+        sipStatus: SIP_STATUS_UNREGISTERED,
+        errorType: SIP_ERROR_TYPE_CONFIGURATION,
+        errorMessage: 'user parameter is missing in config',
       });
       return;
     }
     try {
-      // const socket = new JsSIP.WebSocketInterface(`${secure ? 'wss' : 'ws'}://${host}:${port}${pathname}`);
-      // const socketJsSip = new JsSIP.WebSocketInterface(socket);
       const socketJsSip = new JsSIP.WebSocketInterface(socket);
       this.ua = new JsSIP.UA({
-        // NOT CORRECT
         // Modify to user@domain
-        uri,
+        uri: `${user}@${realm}`,
         authorization_user: user,
-        // realm,
+        realm,
         password,
         sockets: [socketJsSip],
         register: autoRegister,
@@ -505,8 +462,8 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       console.log(error.message);
       this.setState({
         sipStatus: SIP_STATUS_ERROR,
-        sipErrorType: SIP_ERROR_TYPE_CONFIGURATION,
-        sipErrorMessage: error.message,
+        errorType: SIP_ERROR_TYPE_CONFIGURATION,
+        errorMessage: error.message,
       });
       this.logger.debug(error.message);
       return;
@@ -519,9 +476,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
         return;
       }
       this.setState({
-        sipStatus: SIP_STATUS_CONNECTING,
-        sipErrorType: null,
-        sipErrorMessage: null,
+        lineStatus: LINE_STATUS_CONNECTING,
       });
     });
 
@@ -531,9 +486,9 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
         return;
       }
       this.setState({
-        sipStatus: SIP_STATUS_CONNECTED,
-        sipErrorType: null,
-        sipErrorMessage: null,
+        lineStatus: LINE_STATUS_CONNECTED,
+        errorType: SIP_ERROR_TYPE_NONE,
+        errorMessage: '',
       });
     });
 
@@ -543,9 +498,10 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
         return;
       }
       this.setState({
+        lineStatus: LINE_STATUS_DISCONNECTED,
         sipStatus: SIP_STATUS_ERROR,
-        sipErrorType: SIP_ERROR_TYPE_CONNECTION,
-        sipErrorMessage: 'disconnected',
+        errorType: SIP_ERROR_TYPE_CONNECTION,
+        errorMessage: 'disconnected',
       });
     });
 
@@ -556,6 +512,8 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       }
       this.setState({
         sipStatus: SIP_STATUS_REGISTERED,
+        errorType: SIP_ERROR_TYPE_NONE,
+        errorMessage: '',
       });
     });
 
@@ -564,15 +522,9 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       if (this.ua !== ua) {
         return;
       }
-      if (ua.isConnected()) {
-        this.setState({
-          sipStatus: SIP_STATUS_CONNECTED,
-        });
-      } else {
-        this.setState({
-          sipStatus: SIP_STATUS_DISCONNECTED,
-        });
-      }
+      this.setState({
+        sipStatus: SIP_STATUS_UNREGISTERED,
+      });
     });
 
     ua.on('registrationFailed', (data) => {
@@ -584,35 +536,41 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       }
       this.setState({
         sipStatus: SIP_STATUS_ERROR,
-        sipErrorType: SIP_ERROR_TYPE_REGISTRATION,
-        sipErrorMessage: data.cause || data.response.reason_phrase,
+        errorType: SIP_ERROR_TYPE_REGISTRATION,
+        errorMessage: data.cause || data.response.reason_phrase,
       });
     });
 
     ua.on('newRTCSession', (data) => {
-      const {callList} = this.state;
+      const { callList } = this.state;
       // @ts-ignore
       if (!this || this.ua !== ua) {
         return;
       }
       // check the originator
-      const {originator, session} = data;
+      const { originator, session } = data;
       // INCOMING CALL
       if (originator === 'remote') {
         // @ts-ignore
-        const sipCall: SipCall = new SipCall(false,this.getCallConfig(),
-                      this.getRTCConfig(), this.getDtmfOptions(), this.mediaEngine, this.eventBus);
+        const sipCall: SipCall = new SipCall(
+          false,
+          this.getCallConfig(),
+          this.getRTCConfig(),
+          this.getDtmfOptions(),
+          this.mediaEngine,
+          this.eventBus
+        );
         sipCall.onNewRTCSession(session);
         callList.push(sipCall);
-        this.setState({callList});
+        this.setState({ callList });
 
         if (!this.isDialReady()) {
-          sipCall.reject(486, "Busy Here");
+          sipCall.reject(486, 'Busy Here');
         }
       } else {
         // fetch
         const outCall = callList.find((call) => call.isDialing() === true);
-        if(outCall !== undefined) {
+        if (outCall !== undefined) {
           outCall.onNewRTCSession(session);
         }
       }
@@ -623,14 +581,14 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       const { call } = event;
       const { callList } = this.state;
       // tslint:disable-next-line:no-console
-      console.log("Event emitter on call.update");
+      console.log('Event emitter on call.update');
       // tslint:disable-next-line:no-console
       console.log(event.call.getCallStatus());
 
       const index = callList.findIndex((item) => item.getId() === call.getId());
-      if(index !== -1) {
+      if (index !== -1) {
         callList[index] = call;
-        this.setState({callList});
+        this.setState({ callList });
       }
     });
     // CALL ENDED
@@ -638,15 +596,15 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       const { call } = event;
       const { callList } = this.state;
       // tslint:disable-next-line:no-console
-      console.log("Event emitter on call.ended");
+      console.log('Event emitter on call.ended');
       const index = callList.findIndex((item) => item.getId() === call.getId());
-      if(index !== -1) {
+      if (index !== -1) {
         callList.splice(index, 1);
-        this.setState({callList});
+        this.setState({ callList });
       }
       // add the call to history
       const callHistory = [call, ...this.state.callHistory];
-      this.setState({callHistory});
+      this.setState({ callHistory });
     });
 
     const extraHeadersRegister = this.props.extraHeaders.register || [];
@@ -659,5 +617,4 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
   render(): React.ReactNode {
     return this.props.children;
   }
-
 }

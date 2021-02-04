@@ -1,19 +1,24 @@
-export const SIP_STATUS_DISCONNECTED = 'sipStatus/DISCONNECTED';
-export const SIP_STATUS_CONNECTING = 'sipStatus/CONNECTING';
-export const SIP_STATUS_CONNECTED = 'sipStatus/CONNECTED';
+export const LINE_STATUS_DISCONNECTED = 'lineStatus/DISCONNECTED';
+export const LINE_STATUS_CONNECTING = 'lineStatus/CONNECTING';
+export const LINE_STATUS_CONNECTED = 'lineStatus/CONNECTED';
+export type LineStatus =
+  | 'lineStatus/DISCONNECTED'
+  | 'lineStatus/CONNECTING'
+  | 'lineStatus/CONNECTED';
+
+export const SIP_STATUS_UNREGISTERED = 'sipStatus/UNREGISTERED';
 export const SIP_STATUS_REGISTERED = 'sipStatus/REGISTERED';
 export const SIP_STATUS_ERROR = 'sipStatus/ERROR';
 export type SipStatus =
-  | 'sipStatus/DISCONNECTED'
-  | 'sipStatus/CONNECTING'
-  | 'sipStatus/CONNECTED'
+  | 'sipStatus/UNREGISTERED'
   | 'sipStatus/REGISTERED'
   | 'sipStatus/ERROR';
 
+export const SIP_ERROR_TYPE_NONE = 'sipErrorType/NONE';
 export const SIP_ERROR_TYPE_CONFIGURATION = 'sipErrorType/CONFIGURATION';
 export const SIP_ERROR_TYPE_CONNECTION = 'sipErrorType/CONNECTION';
 export const SIP_ERROR_TYPE_REGISTRATION = 'sipErrorType/REGISTRATION';
-export type SipErrorType = 'sipErrorType/CONFIGURATION' | 'sipErrorType/CONNECTION' | 'sipErrorType/REGISTRATION';
+export type SipErrorType = 'sipErrorType/NONE' | 'sipErrorType/CONFIGURATION' | 'sipErrorType/CONNECTION' | 'sipErrorType/REGISTRATION';
 
 export const CALL_STATUS_IDLE = 'callStatus/IDLE';
 export const CALL_STATUS_DIALING = 'callStatus/DIALING';
