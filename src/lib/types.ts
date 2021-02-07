@@ -37,7 +37,7 @@ export const sipPropType = PropTypes.shape({
   status: PropTypes.string,
   errorType: PropTypes.string,
   errorMessage: PropTypes.string,
-
+  addr: PropTypes.string,
   host: PropTypes.string,
   port: PropTypes.number,
   user: PropTypes.string,

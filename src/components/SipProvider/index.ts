@@ -27,7 +27,6 @@ import {
   iceServersPropType,
   Logger,
   sipPropType,
-  WebAudioHTMLMediaElement,
   callInfoListPropType,
 } from '../../lib/types';
 import { DTMF_TRANSPORT } from "jssip/lib/Constants";
@@ -130,9 +129,8 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
   };
   // TODO: Move UA logic to siplib
   private ua: JsSIP.UA | null = null;
-  private remoteAudio: WebAudioHTMLMediaElement | null = null;
   private logger: Logger;
-  // private currentSinkId: string | null = null;
+  private localAddr: string;
   // @ts-ignore
   private isPlaying = false;
   private mediaEngine: MediaEngine;
@@ -162,6 +160,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     return {
       sip: {
         ...this.props,
+        addr: this.localAddr,
         status: this.state.sipStatus,
         errorType: this.state.errorType,
         errorMessage: this.state.errorMessage,
@@ -174,8 +173,6 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       getErrorMessage: this.getErrorMessage.bind(this),
       registerSip: this.registerSip.bind(this),
       unregisterSip: this.unregisterSip.bind(this),
-      // audioSinkId: this.audioSinkId,
-      // setAudioSinkId: this.setAudioSinkId,
       // CALL RELATED
       makeCall: this.makeCall.bind(this),
     };
@@ -219,16 +216,16 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
   /**
    * Get the underlying UserAgent from JsSIP
    */
-  getUA(): JsSIP.UA | null {
+  getUA = (): JsSIP.UA | null => {
     return this.ua;
-  }
-  getUAOrFail(): JsSIP.UA {
+  };
+  getUAOrFail = (): JsSIP.UA => {
     const ua = this.getUA();
     if (!ua) {
       throw new Error('JsSIP.UA not initialized');
     }
     return ua;
-  }
+  };
 
   componentDidMount(): void {
     if (window.document.getElementById('sip-provider-audio')) {
@@ -238,8 +235,6 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
           `element`,
       );
     }
-    // this.remoteAudio = this.createRemoteAudioElement();
-    // window.document.body.appendChild(this.remoteAudio);
     this.reconfigureDebug();
     this.initProperties();
     this.reinitializeJsSIP();
@@ -307,6 +302,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       this.logger.debug('Media device is not ready')
       return false;
     }
+    // registration check required ??
     if (!this.isRegistered()) {
       this.logger.error('Sip device is not registered with the network');
       return false;
@@ -379,7 +375,15 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     const rtcConfig = this.getRTCConfig();
     const dtmfOptions = this.getDtmfOptions();
     // @ts-ignore
-    const sipCall = new SipCall(true, this.getCallConfig(), rtcConfig, dtmfOptions, this.mediaEngine, this.eventBus);
+    const sipCall = new SipCall(
+      false,
+      callee,
+      this.getCallConfig(),
+      rtcConfig,
+      dtmfOptions,
+      this.mediaEngine,
+      this.eventBus
+    );
     const ua = this.getUA();
 
     // create Input MediaStream from MediaDevice
@@ -408,26 +412,13 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     }
   }
 
-  // setAudioSinkId = async (sinkId: string): Promise<void> => {
-  //   if (this.currentSinkId && sinkId === this.currentSinkId) {
-  //     return;
-  //   }
-
-  //   this.currentSinkId = sinkId;
-
-  //   return this.getRemoteAudioOrFail().setSinkId(sinkId);
-  // };
-
-  get audioSinkId(): string {
-    return this.remoteAudio?.sinkId || 'undefined';
-  }
-
   async reinitializeJsSIP(): Promise<void> {
     if (this.ua) {
       this.ua.stop();
       this.ua = null;
     }
     const { socket, user, password, realm, autoRegister } = this.props;
+    this.localAddr = `${user}@${realm}`;
 
     if (!user) {
       this.setState({
@@ -551,9 +542,14 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       const { originator, session } = data;
       // INCOMING CALL
       if (originator === 'remote') {
+        let remoteName = session.remote_identity.display_name;
+        if(remoteName === null || remoteName === '') {
+          remoteName = session.remote_identity.uri.user;
+        }
         // @ts-ignore
         const sipCall: SipCall = new SipCall(
-          false,
+          true,
+          remoteName,
           this.getCallConfig(),
           this.getRTCConfig(),
           this.getDtmfOptions(),

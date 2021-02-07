@@ -67,14 +67,17 @@ export class SipCall {
   _mediaEngine: MediaEngine; // Media Engine instance
   _eventEmitter: EventEmitter;
   // call variables
-  _startTime: string | undefined;
-  _endTime: string | undefined;
-  _remoteUri: string;
   _endType: 'hangup' | 'failure' | 'none';
   _errorCause: string;
   _isPlaying: boolean;
+  // instance access
+  startTime: string | undefined;
+  endTime: string | undefined;
+  remoteUri: string;
+  remoteName: string;
 
-  constructor(isDialing: boolean,
+  constructor(isIncoming: boolean,
+              remoteName: string,
               callConfig: SipCallConfig,
               rtcConfig: RTCConfiguration,
               dtmfOptions: DtmfOptions,
@@ -86,20 +89,21 @@ export class SipCall {
     this._dtmfOptions = dtmfOptions;
     this._mediaEngine = mediaEngine;
     this._eventEmitter = eventEmitter;
-    this._remoteUri = '';
+    this.remoteName = remoteName;
+    this.remoteUri = '';
     this._endType = 'none';
     this._errorCause = '';
     this._id = this._uuid();
     this._isPlaying = false;
-    this._init(isDialing);
+    this._init(isIncoming);
   }
 
-  _init = (isDialing: boolean): void => {
-    if (isDialing === true) {
-      this.setCallStatus(CALL_STATUS_DIALING);
-    } else {
+  _init = (isIncoming: boolean): void => {
+    if (isIncoming === true) {
       this.setCallStatus(CALL_STATUS_RINGING);
       this._mediaEngine.playTone('ringing', 1.0);
+    } else {
+      this.setCallStatus(CALL_STATUS_DIALING);
     }
     this._configureDebug();
     this._mediaSessionStatus = MEDIA_SESSION_STATUS_IDLE;
@@ -177,7 +181,11 @@ export class SipCall {
     if (!rtcSession) {
       throw Error(`New Session is not active`);
     }
-    this._remoteUri = rtcSession.remote_identity.uri.toAor();
+    this.remoteName = rtcSession.remote_identity.display_name;
+    if(this.remoteName === null || this.remoteName === '') {
+      this.remoteName = rtcSession.remote_identity.uri.user;
+    }
+    this.remoteUri = rtcSession.remote_identity.uri.toAor();
     this.setRTCSession(rtcSession);
     this._initSessionEventHandler();
     this._eventEmitter.emit('call.update', {'call': this});
@@ -195,20 +203,43 @@ export class SipCall {
   isRinging = (): boolean => {
     return (this._callStatus === CALL_STATUS_RINGING);
   };
-  startTime = (): string | undefined => {
-    return this._startTime;
-  };
-  endTime = (): string | undefined => {
-    return this._endTime;
-  };
-  remoteUri = (): string => {
-    return this._remoteUri;
+  // whether call is in establishing state
+  isEstablishing = (): boolean => {
+    if (this._callStatus === CALL_STATUS_DIALING ||
+        this._callStatus === CALL_STATUS_RINGING ||
+        this._callStatus === CALL_STATUS_PROGRESS) {
+      return true;
+    }
+    return false;
   };
   errorReason = (): string => {
     return this._errorCause;
   };
   isFailed = (): boolean => {
     return this._endType === 'failure';
+  };
+  getDisposition = (): string => {
+    let disp = "idle";
+    switch (this._callStatus) {
+      case CALL_STATUS_DIALING:
+        disp = 'dialing';
+        break;
+      case CALL_STATUS_RINGING:
+        disp = 'ringing';
+        break;
+      case CALL_STATUS_PROGRESS:
+        disp = 'progress';
+        break;
+      case CALL_STATUS_ACTIVE:
+        disp = 'active';
+        if (this._mediaSessionStatus === MEDIA_SESSION_STATUS_SENDONLY ||
+            this._mediaSessionStatus === MEDIA_SESSION_STATUS_INACTIVE) {
+          disp = 'local hold'
+        }
+        break;
+    }
+
+    return disp;
   };
 
   _configureDebug = (): void => {
@@ -250,7 +281,7 @@ export class SipCall {
         extraHeaders: this.getExtraHeaders().invite,
         sessionTimersExpires: this.getSessionTimerExpires(),
       };
-      this._remoteUri = target;
+      this.remoteUri = target;
       this.setCallStatus(CALL_STATUS_DIALING);
       this._eventEmitter.emit('call.update', {'call': this});
       ua.call(target, opts);
@@ -643,7 +674,7 @@ export class SipCall {
       console.log('ON session accepted event');
       this._logger.debug('RTCSession "accepted" event received', data)
       if (rtcSession?.start_time && rtcSession.start_time !== undefined) {
-        this._startTime = rtcSession?.start_time.toString();
+        this.startTime = rtcSession?.start_time.toString();
       }
       this.setCallStatus(CALL_STATUS_CONNECTING);
       this._mediaEngine.stopTone('ringback');
@@ -671,7 +702,7 @@ export class SipCall {
         this._mediaEngine.closeStream(this._outputMediaStream);
       }
       if(rtcSession?.end_time && rtcSession.end_time !== undefined) {
-        this._endTime = rtcSession?.end_time.toString();
+        this.endTime = rtcSession?.end_time.toString();
       }
       this._endType = 'hangup';
       this.setCallStatus(CALL_STATUS_IDLE);
@@ -682,14 +713,14 @@ export class SipCall {
       // tslint:disable-next-line:no-console
       console.log('ON session failed event');
       this._logger.debug('RTCSession "failed" event received', data)
-      // const originator: string = data.originator;
-      // const reason: string = data.cause;
+      const originator = data.originator;
+      const reason = data.cause;
       if(this._inputMediaStream) {
         this._mediaEngine.closeStream(this._inputMediaStream);
         this.setInputMediaStream(null);
       }
       this._endType = 'failure';
-      this._errorCause = `${data.originator}: ${data.cause}`;
+      this._errorCause = `${originator}: ${reason}`;
       this.setCallStatus(CALL_STATUS_IDLE);
       this.setMediaSessionStatus(MEDIA_SESSION_STATUS_IDLE);
       this._eventEmitter.emit('call.ended', {'call': this});
@@ -705,7 +736,6 @@ export class SipCall {
       console.log('ON session hold event');
       const originator = data.originator;
       const mediaSessionStatus  = this.getMediaSessionStatus();
-
       this._logger.debug('RTCSession "hold" event received', data)
       if (originator === 'remote') {
         if (mediaSessionStatus === MEDIA_SESSION_STATUS_ACTIVE) {
