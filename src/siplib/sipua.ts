@@ -1,9 +1,10 @@
 
 export interface SipUAConfig {
+  host?: string;
+  autoHold: boolean;
   sessionTimers: boolean;
   registerExpires: number;
   registrar?: string; // sip server URI eg: sip:registrar.example.com
-  host?: string;
   userAgent: string; // Useragent string used in all SIP messages
 }
 

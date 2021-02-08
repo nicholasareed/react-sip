@@ -79,6 +79,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     unregisterSip: PropTypes.func,
     // CALL
     makeCall: PropTypes.func,
+    acceptCall: PropTypes.func,
   };
 
   static propTypes = {
@@ -175,12 +176,14 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       unregisterSip: this.unregisterSip.bind(this),
       // CALL RELATED
       makeCall: this.makeCall.bind(this),
+      acceptCall: this.acceptCall.bind(this),
     };
   }
 
   initProperties = (): void => {
     this.uaConfig = {
       host: this.props.host,
+      autoHold: true,
       sessionTimers: true,
       registerExpires: 600,
       // registrar: this.props.registrar,
@@ -297,7 +300,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     return this.state.errorMessage;
   };
 
-  isDialReady = (): boolean => {
+  isCallAllowed = (): boolean => {
     if (!this.mediaEngine) {
       this.logger.debug('Media device is not ready')
       return false;
@@ -312,13 +315,13 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       this.logger.debug('Max allowed call limit has reached')
       return false;
     }
-    // check if any calls are in dialing state
+    // check if any calls are in establishing state
     // dont allow new call, if one is still in progress state
     const { callList } = this.state;
-    const dialled  = callList.find((call) => { return call.isDialing() === true });
+    const  establishing = callList.find((call) => { return call.isEstablishing() === true });
     // Already a call is
-    if (dialled && dialled !== undefined) {
-      this.logger.debug('Already a call is in dialled state');
+    if (establishing && establishing !== undefined) {
+      this.logger.debug('Already a call is in establishing state');
       return false;
     }
     // TODO Allow even in dialing state ??
@@ -361,7 +364,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     if (!this.isLineConnected()) {
       throw new Error(`Phone is not connected to the network, current state - ${this.state.lineStatus}`);
     }
-    if (!this.isDialReady()) {
+    if (!this.isCallAllowed()) {
       throw new Error(`Max limit reached, new calls are not allowed`);
     }
     // check if any active calls are present or not
@@ -394,6 +397,19 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
 
     return sipCall.getId();
   };
+  // Auto hold
+  acceptCall = (call: SipCall): void => {
+    // check if any media active call is present
+    const { callList } = this.state;
+    if (this.uaConfig?.autoHold) {
+      const activeCalls = callList.filter((item) => item.isActive() && item.isOnLocalHold() === false);
+      activeCalls.forEach((item) => {
+        item.hold();
+      });
+    }
+    call.accept(true, true);
+  };
+
   // Clear all existing sessions from the UA
   terminateAll = () => {
     if (!this.ua) {
@@ -546,6 +562,15 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
         if(remoteName === null || remoteName === '') {
           remoteName = session.remote_identity.uri.user;
         }
+        if (!this.isCallAllowed()) {
+          const rejectOptions = {
+            status_code: 486,
+            reason_phrase: 'Busy Here',
+          };
+          session.terminate(rejectOptions);
+          return;
+        }
+
         // @ts-ignore
         const sipCall: SipCall = new SipCall(
           true,
@@ -560,9 +585,6 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
         callList.push(sipCall);
         this.setState({ callList });
 
-        if (!this.isDialReady()) {
-          sipCall.reject(486, 'Busy Here');
-        }
       } else {
         // fetch
         const outCall = callList.find((call) => call.isDialing() === true);
