@@ -79,7 +79,6 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     unregisterSip: PropTypes.func,
     // CALL
     makeCall: PropTypes.func,
-    acceptCall: PropTypes.func,
   };
 
   static propTypes = {
@@ -176,14 +175,12 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       unregisterSip: this.unregisterSip.bind(this),
       // CALL RELATED
       makeCall: this.makeCall.bind(this),
-      acceptCall: this.acceptCall.bind(this),
     };
   }
 
   initProperties = (): void => {
     this.uaConfig = {
       host: this.props.host,
-      autoHold: true,
       sessionTimers: true,
       registerExpires: 600,
       // registrar: this.props.registrar,
@@ -396,18 +393,6 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     this.setState({ callList });
 
     return sipCall.getId();
-  };
-  // Auto hold
-  acceptCall = (call: SipCall): void => {
-    // check if any media active call is present
-    const { callList } = this.state;
-    if (this.uaConfig?.autoHold) {
-      const activeCalls = callList.filter((item) => item.isActive() && item.isOnLocalHold() === false);
-      activeCalls.forEach((item) => {
-        item.hold();
-      });
-    }
-    call.accept(true, true);
   };
 
   // Clear all existing sessions from the UA

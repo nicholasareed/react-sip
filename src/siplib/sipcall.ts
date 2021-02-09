@@ -75,6 +75,7 @@ export class SipCall {
   endTime: string | undefined;
   remoteUri: string;
   remoteName: string;
+  remoteUser: string;
 
   constructor(isIncoming: boolean,
               remoteName: string,
@@ -103,6 +104,7 @@ export class SipCall {
       this.setCallStatus(CALL_STATUS_RINGING);
       this._mediaEngine.playTone('ringing', 1.0);
     } else {
+      this.remoteUser = this.remoteName;
       this.setCallStatus(CALL_STATUS_DIALING);
     }
     this._configureDebug();
@@ -137,6 +139,9 @@ export class SipCall {
   };
   setCallStatus = (status: CallStatus): void => {
     this._callStatus = status;
+  };
+  isEstablished = (): boolean => {
+    return this._callStatus === CALL_STATUS_ACTIVE || this._callStatus === CALL_STATUS_CONNECTING;
   };
   isActive = (): boolean => {
     if (this._callStatus === CALL_STATUS_CONNECTING ||
@@ -185,6 +190,7 @@ export class SipCall {
     if(this.remoteName === null || this.remoteName === '') {
       this.remoteName = rtcSession.remote_identity.uri.user;
     }
+    this.remoteUser = rtcSession.remote_identity.uri.user;
     this.remoteUri = rtcSession.remote_identity.uri.toAor();
     this.setRTCSession(rtcSession);
     this._initSessionEventHandler();
@@ -230,6 +236,7 @@ export class SipCall {
       case CALL_STATUS_PROGRESS:
         disp = 'progress';
         break;
+      case CALL_STATUS_CONNECTING:
       case CALL_STATUS_ACTIVE:
         disp = 'active';
         if (this._mediaSessionStatus === MEDIA_SESSION_STATUS_SENDONLY ||
@@ -291,7 +298,7 @@ export class SipCall {
   };
 
   // ACCEPT incoming call
-  accept = (hasAudio: boolean, hasVideo: boolean): void => {
+  accept = (hasAudio: boolean=true, hasVideo: boolean=true): void => {
     if (!this.isSessionActive()) {
       throw new Error("RtcSession is not active");
     }
