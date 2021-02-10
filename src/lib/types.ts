@@ -54,17 +54,25 @@ export const sipPropType = PropTypes.shape({
 });
 
 export interface CallInfo {
-  _id: string,
-  _direction: string,
-  _remoteUri: string,
-  _callStatus: string,
-  _isActive: boolean,
-  _mediaSessionStatus: string,
-  _startTime: string,
-  _endTime: string,
-  _endMode: string,
-  _errorReason: string,
+  _id: string;
+  _direction: string;
+  _remoteName: string;
+  _remoteUser: string;
+  _startTime: string;
+  _endTime: string;
+  _endType: string;
+  _errorReason: string;
 }
+export const callHistoryPropType = PropTypes.arrayOf(PropTypes.shape({
+  _id: PropTypes.string,
+  _direction: PropTypes.string,
+  _remoteName: PropTypes.string,
+  _remoteUser: PropTypes.string,
+  _startTime: PropTypes.string,
+  _endTime: PropTypes.string,
+  _endMode: PropTypes.string, // 'hangup' | 'failure'
+  _errorReason: PropTypes.string,
+}));
 
 export const callInfoListPropType = PropTypes.arrayOf(PropTypes.shape({
   _id: PropTypes.string,

@@ -18,7 +18,10 @@ import {
   MEDIA_SESSION_STATUS_RECVONLY,
   MEDIA_SESSION_STATUS_SENDONLY,
   MediaSessionStatus,
-  MediaDeviceStatus
+  MediaDeviceStatus,
+  CallDirection,
+  CALL_DIRECTION_INCOMING,
+  CALL_DIRECTION_OUTGOING
 } from "..";
 import { SipExtraHeaders } from "./sipua";
 
@@ -70,12 +73,14 @@ export class SipCall {
   _endType: 'hangup' | 'failure' | 'none';
   _errorCause: string;
   _isPlaying: boolean;
+  _direction: CallDirection;
   // instance access
   startTime: string | undefined;
   endTime: string | undefined;
   remoteUri: string;
   remoteName: string;
   remoteUser: string;
+
 
   constructor(isIncoming: boolean,
               remoteName: string,
@@ -102,10 +107,12 @@ export class SipCall {
   _init = (isIncoming: boolean): void => {
     if (isIncoming === true) {
       this.setCallStatus(CALL_STATUS_RINGING);
+      this._direction = CALL_DIRECTION_INCOMING;
       this._mediaEngine.playTone('ringing', 1.0);
     } else {
       this.remoteUser = this.remoteName;
       this.setCallStatus(CALL_STATUS_DIALING);
+      this._direction = CALL_DIRECTION_OUTGOING;
     }
     this._configureDebug();
     this._mediaSessionStatus = MEDIA_SESSION_STATUS_IDLE;

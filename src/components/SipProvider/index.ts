@@ -18,6 +18,7 @@ import {
   SIP_ERROR_TYPE_CONFIGURATION,
   SIP_ERROR_TYPE_CONNECTION,
   SIP_ERROR_TYPE_REGISTRATION,
+  CALL_DIRECTION_OUTGOING,
   SipErrorType,
   SipStatus,
   LineStatus,
@@ -27,7 +28,9 @@ import {
   iceServersPropType,
   Logger,
   sipPropType,
+  CallInfo,
   callInfoListPropType,
+  callHistoryPropType,
 } from '../../lib/types';
 import { DTMF_TRANSPORT } from "jssip/lib/Constants";
 
@@ -61,14 +64,14 @@ export interface JsSipState {
   errorType: SipErrorType;
   errorMessage: string;
   callList: SipCall[];
-  callHistory: SipCall[];
+  callHistory: CallInfo[];
 }
 
 export default class SipProvider extends React.Component<JsSipConfig, JsSipState> {
   static childContextTypes = {
     sip: sipPropType,
     calls: callInfoListPropType,
-    callHistory: callInfoListPropType,
+    callHistory: callHistoryPropType,
     // Status
     isLineConnected: PropTypes.func,
     isRegistered: PropTypes.func,
@@ -324,6 +327,22 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     // TODO Allow even in dialing state ??
     return true;
   };
+
+  _addToHistory = (call) => {
+    const direction = (call._direction === CALL_DIRECTION_OUTGOING) ? 'outgoing' : 'incoming';
+    const callInfo = {
+      _id: call.getId(),
+      _direction: direction,
+      _remoteName: call.remoteName,
+      _remoteUser: call.remoteUser,
+      _startTime: call.startTime,
+      _endTime: call.endTime,
+      _endType: call._endType,
+      _errorReason: call._errorReason
+    };
+    const callHistory: CallInfo[]  = [callInfo, ...this.state.callHistory];
+    this.setState({ callHistory })
+  }
 
   registerSip(): void {
     if (!this.ua) {
@@ -604,10 +623,9 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       if (index !== -1) {
         callList.splice(index, 1);
         this.setState({ callList });
+        // add the call to history
+        this._addToHistory(call);
       }
-      // add the call to history
-      const callHistory = [call, ...this.state.callHistory];
-      this.setState({ callHistory });
     });
 
     const extraHeadersRegister = this.props.extraHeaders.register || [];
