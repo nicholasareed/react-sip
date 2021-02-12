@@ -21,7 +21,13 @@ import {
   MediaDeviceStatus,
   CallDirection,
   CALL_DIRECTION_INCOMING,
-  CALL_DIRECTION_OUTGOING
+  CALL_DIRECTION_OUTGOING,
+  TransferStatus,
+  TRANSFER_STATUS_NONE,
+  TRANSFER_STATUS_INITIATED,
+  TRANSFER_STATUS_REFER_SUCCESS,
+  TRANSFER_STATUS_FAILED,
+  TRANSFER_STATUS_COMPLETE
 } from "..";
 import { SipExtraHeaders } from "./sipua";
 
@@ -60,6 +66,7 @@ export class SipCall {
     audio: MediaDeviceStatus,
     video: MediaDeviceStatus,
   };
+  _transferStatus: TransferStatus;
   _logger: Logger;
   _debug: boolean;
   _debugNamespaces?: string;
@@ -81,7 +88,6 @@ export class SipCall {
   remoteName: string;
   remoteUser: string;
 
-
   constructor(isIncoming: boolean,
               remoteName: string,
               callConfig: SipCallConfig,
@@ -101,6 +107,7 @@ export class SipCall {
     this._errorCause = '';
     this._id = this._uuid();
     this._isPlaying = false;
+    this._transferStatus = TRANSFER_STATUS_NONE;
     this._init(isIncoming);
   }
 
@@ -602,20 +609,86 @@ export class SipCall {
   isVideoOnMute = (): boolean => {
     return this._mediaDeviceStatus.video === MEDIA_DEVICE_STATUS_MUTE;
   }
-  attendedTransfer = (): void => {
+  /*
+   * Blind transfer
+   * Transferor sends target uri to transferee using REFER
+   */
+  blindTransfer = (target: string): void => {
     if (!this.getRTCSession()) {
       throw new Error('RtcSession is not active');
     }
     // TODO implement transfer logic
+    const transferOptions = {
+      eventHandlers: {
+        requestSucceeded: this._onReferSuccess,
+        requestFailed: this._onReferfailed,
+        accepted: this._onTransferAcceptNotify,
+        failed: this._onTransferFailureNotify,
+      },
+    }
+    this.getRTCSession()!.refer(target, transferOptions);
+    this._transferStatus = TRANSFER_STATUS_INITIATED;
   };
-
-  unattendedTransfer = (): void => {
+  /*
+   * Attended Transfer (Transfer with Consultation hold)
+   * RFC 5589
+   * Dialog 1: Transferor and Transferee (hold)
+   * Dialog 2: Transferor and Target
+   * Transfer logic:
+   * Hold Dialog 2
+   * Send Refer with Dialog 1 session in replaces.
+   */
+  attendedTransfer = (replaceCall: SipCall): void => {
     if (!this.getRTCSession()) {
       throw new Error('RtcSession is not active');
     }
-    // TODO implement transfer logic
+    // allow only if replace call is on hold
+    if (!replaceCall.isOnLocalHold()) {
+      this._logger.error('Attended transfer is allowed only if call is on hold');
+      return;
+    }
+    const replaceSession = replaceCall.getRTCSession();
+    if (!replaceSession) {
+      this._logger.error('Replace session is not valid');
+      return;
+    }
+    const transferOptions = {
+      replaces: replaceSession,
+      eventHandlers: {
+        requestSucceeded: this._onReferSuccess,
+        requestFailed: this._onReferfailed,
+        accepted: this._onTransferAcceptNotify,
+        failed: this._onTransferFailureNotify,
+      },
+    }
+    // hold the current call
+    if (!this.isOnLocalHold()) {
+      this.hold();
+    }
+    this.getRTCSession()?.refer(this.remoteUri, transferOptions);
+    this._transferStatus = TRANSFER_STATUS_INITIATED;
   };
 
+  _onReferSuccess = (data): void => {
+    // tslint:disable-next-line:no-console
+    console.log('ON Transfer refer success');
+    this._transferStatus = TRANSFER_STATUS_REFER_SUCCESS;
+  };
+  _onReferfailed = (data): void => {
+    // tslint:disable-next-line:no-console
+    console.log('ON Transfer refer failed');
+    this._transferStatus = TRANSFER_STATUS_FAILED;
+  };
+  _onTransferAcceptNotify = (data): void => {
+    // tslint:disable-next-line:no-console
+    console.log('ON Transfer accept notification');
+    this._transferStatus = TRANSFER_STATUS_COMPLETE;
+  };
+  _onTransferFailureNotify = (data): void => {
+    // tslint:disable-next-line:no-console
+    console.log('ON Transfer failure notification');
+    this._transferStatus = TRANSFER_STATUS_FAILED;
+  };
   _handleRemoteTrack = (track: MediaStreamTrack): void => {
     this._mediaEngine.addTrack(this._outputMediaStream, track);
   };

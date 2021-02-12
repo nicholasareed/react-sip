@@ -541,14 +541,14 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     ua.on('registrationFailed', (data) => {
       this.logger.debug('UA "registrationFailed" event');
       // tslint:disable-next-line:no-console
-      console.log(data.response.reason_phrase);
+      console.log(data.cause);
       if (this.ua !== ua) {
         return;
       }
       this.setState({
         sipStatus: SIP_STATUS_ERROR,
         errorType: SIP_ERROR_TYPE_REGISTRATION,
-        errorMessage: data.cause || data.response.reason_phrase,
+        errorMessage: data.cause === undefined ? '' : data.cause,
       });
     });
 

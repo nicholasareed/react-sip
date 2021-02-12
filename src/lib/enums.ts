@@ -74,4 +74,15 @@ export type MediaTone =
   | 'mediaTone/RINGING'
   | 'mediaTone/DIALING';
 
+export const TRANSFER_STATUS_NONE = 'transfer/NONE';
+export const TRANSFER_STATUS_INITIATED = 'transfer/INITIATED';
+export const TRANSFER_STATUS_FAILED = 'transfer/FAILED';
+export const TRANSFER_STATUS_REFER_SUCCESS = 'transfer/REFER_SUCCESS';
+export const TRANSFER_STATUS_COMPLETE = 'transfer/COMPLETE';
+export type TransferStatus =
+  | 'transfer/NONE'
+  | 'transfer/INITIATED'
+  | 'transfer/FAILED'
+  | 'transfer/REFER_SUCCESS'
+  | 'transfer/COMPLETE';
 
