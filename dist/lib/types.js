@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.callPropType = exports.sipPropType = exports.iceServersPropType = exports.extraHeadersPropType = void 0;
+exports.callInfoListPropType = exports.callHistoryPropType = exports.sipPropType = exports.iceServersPropType = exports.extraHeadersPropType = void 0;
 var PropTypes = require("prop-types");
 exports.extraHeadersPropType = PropTypes.objectOf(PropTypes.arrayOf(PropTypes.string));
 exports.iceServersPropType = PropTypes.arrayOf(PropTypes.object);
@@ -8,6 +8,7 @@ exports.sipPropType = PropTypes.shape({
     status: PropTypes.string,
     errorType: PropTypes.string,
     errorMessage: PropTypes.string,
+    addr: PropTypes.string,
     host: PropTypes.string,
     port: PropTypes.number,
     user: PropTypes.string,
@@ -22,18 +23,26 @@ exports.sipPropType = PropTypes.shape({
     debug: PropTypes.bool,
     debugNamespaces: PropTypes.string,
 });
-exports.callPropType = PropTypes.shape({
-    id: PropTypes.string,
-    status: PropTypes.string,
-    direction: PropTypes.string,
-    counterpart: PropTypes.string,
-    isOnHold: PropTypes.bool,
-    hold: PropTypes.func,
-    unhold: PropTypes.func,
-    toggleHold: PropTypes.func,
-    microphoneIsMuted: PropTypes.bool,
-    muteMicrophone: PropTypes.func,
-    unmuteMicrophone: PropTypes.func,
-    toggleMuteMicrophone: PropTypes.func,
-});
+exports.callHistoryPropType = PropTypes.arrayOf(PropTypes.shape({
+    _id: PropTypes.string,
+    _direction: PropTypes.string,
+    _remoteName: PropTypes.string,
+    _remoteUser: PropTypes.string,
+    _startTime: PropTypes.string,
+    _endTime: PropTypes.string,
+    _endMode: PropTypes.string,
+    _errorReason: PropTypes.string,
+}));
+exports.callInfoListPropType = PropTypes.arrayOf(PropTypes.shape({
+    _id: PropTypes.string,
+    _direction: PropTypes.string,
+    _remoteUri: PropTypes.string,
+    _status: PropTypes.string,
+    _isActive: PropTypes.bool,
+    _mediaSessionStatus: PropTypes.string,
+    _startTime: PropTypes.string,
+    _endTime: PropTypes.string,
+    _endMode: PropTypes.string,
+    _errorReason: PropTypes.string,
+}));
 //# sourceMappingURL=types.js.map
