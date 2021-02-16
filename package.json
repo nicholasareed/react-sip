@@ -40,6 +40,7 @@
     },
     "homepage": "https://github.com/evercall/react-sip#readme",
     "dependencies": {
+        "eventemitter3": "^4.0.7",
         "jssip": "^3.7.0",
         "prop-types": "^15.7.2"
     },

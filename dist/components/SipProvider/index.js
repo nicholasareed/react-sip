@@ -59,226 +59,197 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
         if (op[0] & 5) throw op[1]; return { value: op[0] ? op[1] : void 0, done: true };
     }
 };
+var __spreadArrays = (this && this.__spreadArrays) || function () {
+    for (var s = 0, i = 0, il = arguments.length; i < il; i++) s += arguments[i].length;
+    for (var r = Array(s), k = 0, i = 0; i < il; i++)
+        for (var a = arguments[i], j = 0, jl = a.length; j < jl; j++, k++)
+            r[k] = a[j];
+    return r;
+};
 Object.defineProperty(exports, "__esModule", { value: true });
-var JsSIP = require("jssip");
 var PropTypes = require("prop-types");
 var React = require("react");
+var JsSIP = require("jssip");
+var EventEmitter = require("eventemitter3");
+var mediaengine_1 = require("../../medialib/mediaengine");
 var dummyLogger_1 = require("../../lib/dummyLogger");
+var sipcall_1 = require("../../siplib/sipcall");
 var enums_1 = require("../../lib/enums");
-var media_1 = require("../../lib/media");
 var types_1 = require("../../lib/types");
+var Constants_1 = require("jssip/lib/Constants");
 var SipProvider = (function (_super) {
     __extends(SipProvider, _super);
     function SipProvider(props) {
         var _this = _super.call(this, props) || this;
         _this.ua = null;
-        _this.remoteAudio = null;
-        _this.currentSinkId = null;
-        _this.isPlaying = false;
-        _this.answerCall = function (options) {
-            var opts = {
-                mediaConstraints: {
-                    audio: true,
-                    video: false,
-                },
-                pcConfig: {
-                    iceServers: _this.props.iceServers,
-                },
+        _this._uaConfig = null;
+        _this._initProperties = function () {
+            _this._uaConfig = {
+                host: _this.props.host,
+                sessionTimers: true,
+                registerExpires: 600,
+                userAgent: 'CioPhone UA v0.1',
             };
-            Object.assign(opts, options);
-            if (_this.state.callStatus !== enums_1.CALL_STATUS_STARTING || _this.state.callDirection !== enums_1.CALL_DIRECTION_INCOMING) {
-                throw new Error("Calling answerCall() is not allowed when call status is " + _this.state.callStatus + " and call direction is " + _this.state.callDirection + "  (expected " + enums_1.CALL_STATUS_STARTING + " and " + enums_1.CALL_DIRECTION_INCOMING + ")");
-            }
-            if (!_this.state.rtcSession) {
-                throw new Error('State does not have an active session.');
-            }
-            _this.state.rtcSession.answer(opts);
+            _this._callConfig = {
+                extraHeaders: _this.props.extraHeaders,
+                sessionTimerExpires: _this.props.sessionTimersExpires,
+            };
+            _this._rtcConfig = {
+                iceServers: _this.props.iceServers,
+            };
+            _this._dtmfOptions = {
+                duration: 100,
+                interToneGap: 500,
+                channelType: Constants_1.DTMF_TRANSPORT.RFC2833,
+            };
+            _this._mediaEngine = new mediaengine_1.MediaEngine(null);
         };
-        _this.startCall = function (destination, anonymous) {
-            if (!destination) {
-                throw new Error("Destination must be defined (" + destination + " given)");
+        _this._getCallConfig = function () {
+            return _this._callConfig;
+        };
+        _this._getRTCConfig = function () {
+            return _this._rtcConfig;
+        };
+        _this._getDtmfOptions = function () {
+            return _this._dtmfOptions;
+        };
+        _this._getUA = function () {
+            return _this.ua;
+        };
+        _this._getUAOrFail = function () {
+            var ua = _this._getUA();
+            if (!ua) {
+                throw new Error('JsSIP.UA not initialized');
+            }
+            return ua;
+        };
+        _this.getActiveCall = function () {
+            var callList = _this.state.callList;
+            var activeCall = callList.find(function (item) { return item.isMediaActive() === true; });
+            return activeCall;
+        };
+        _this.getLastCall = function () {
+            var callList = _this.state.callList;
+            if (callList.length > 0) {
+                return callList[callList.length - 1];
+            }
+        };
+        _this.isLineConnected = function () {
+            return _this.state.lineStatus === enums_1.LINE_STATUS_CONNECTED;
+        };
+        _this.isRegistered = function () {
+            return _this.state.sipStatus === enums_1.SIP_STATUS_REGISTERED;
+        };
+        _this.hasError = function () {
+            return _this.state.errorType !== enums_1.SIP_ERROR_TYPE_NONE;
+        };
+        _this.getErrorMessage = function () {
+            return _this.state.errorMessage;
+        };
+        _this._isCallAllowed = function () {
+            if (!_this._mediaEngine) {
+                _this._logger.debug('Media device is not ready');
+                return false;
+            }
+            if (!_this.isRegistered()) {
+                _this._logger.error('Sip device is not registered with the network');
+                return false;
+            }
+            if (_this.state.callList.length >= _this.props.maxAllowedCalls) {
+                _this._logger.debug('Max allowed call limit has reached');
+                return false;
+            }
+            var callList = _this.state.callList;
+            var establishing = callList.find(function (call) {
+                return call.isEstablishing() === true;
+            });
+            if (establishing && establishing !== undefined) {
+                _this._logger.debug('Already a call is in establishing state');
+                return false;
+            }
+            return true;
+        };
+        _this._addToHistory = function (call) {
+            var direction = call._direction === enums_1.CALL_DIRECTION_OUTGOING ? 'outgoing' : 'incoming';
+            var callInfo = {
+                _id: call.getId(),
+                _direction: direction,
+                _remoteName: call.remoteName,
+                _remoteUser: call.remoteUser,
+                _startTime: call.startTime,
+                _endTime: call.endTime,
+                _endType: call._endType,
+                _errorReason: call._errorReason,
+            };
+            var callHistory = __spreadArrays([callInfo], _this.state.callHistory);
+            _this.setState({ callHistory: callHistory });
+        };
+        _this.makeCall = function (callee, isVideoCall) {
+            if (!callee) {
+                throw new Error("Destination must be defined (" + callee + " given)");
             }
             if (!_this.ua) {
                 throw new Error("Calling startCall is not allowed when JsSIP.UA isn't initialized");
             }
-            if (_this.state.sipStatus !== enums_1.SIP_STATUS_CONNECTED && _this.state.sipStatus !== enums_1.SIP_STATUS_REGISTERED) {
-                throw new Error("Calling startCall() is not allowed when sip status is " + _this.state.sipStatus + " (expected " + enums_1.SIP_STATUS_CONNECTED + " or " + enums_1.SIP_STATUS_REGISTERED + ")");
+            if (!_this.isLineConnected()) {
+                throw new Error("Phone is not connected to the network, current state - " + _this.state.lineStatus);
             }
-            if (_this.state.callStatus !== enums_1.CALL_STATUS_IDLE) {
-                throw new Error("Calling startCall() is not allowed when call status is " + _this.state.callStatus + " (expected " + enums_1.CALL_STATUS_IDLE + ")");
+            if (!_this._isCallAllowed()) {
+                throw new Error("Max limit reached, new calls are not allowed");
             }
-            if (!anonymous) {
-                anonymous = false;
+            var callList = _this.state.callList;
+            var activeCall = callList.find(function (item) { return item.isMediaActive(); });
+            if (activeCall) {
+                throw new Error("An active call found, hold the call before making new call");
             }
-            var _a = _this.props, iceServers = _a.iceServers, sessionTimersExpires = _a.sessionTimersExpires;
-            var extraHeaders = _this.props.extraHeaders.invite;
-            var options = {
-                extraHeaders: extraHeaders,
-                mediaConstraints: { audio: true, video: false },
-                rtcOfferConstraints: { iceRestart: _this.props.iceRestart },
-                pcConfig: {
-                    iceServers: iceServers,
-                },
-                sessionTimersExpires: sessionTimersExpires,
-                anonymous: anonymous,
-            };
-            _this.ua.call(String(destination), options);
-            _this.setState({ callStatus: enums_1.CALL_STATUS_STARTING });
+            var rtcConfig = _this._getRTCConfig();
+            var dtmfOptions = _this._getDtmfOptions();
+            var sipCall = new sipcall_1.SipCall(false, callee, _this._getCallConfig(), rtcConfig, dtmfOptions, _this._mediaEngine, _this.eventBus);
+            var ua = _this._getUA();
+            sipCall.dial(ua, callee, true, true);
+            callList.push(sipCall);
+            _this.setState({ callList: callList });
+            return sipCall.getId();
         };
-        _this.stopCall = function (options) {
+        _this.playTone = function (tone) {
+            _this._mediaEngine.playTone(tone);
+        };
+        _this.stopTone = function (tone) {
+            _this._mediaEngine.stopTone(tone);
+        };
+        _this._terminateAll = function () {
             if (!_this.ua) {
-                throw new Error("Calling stopCall is not allowed when JsSIP.UA isn't initialized");
+                throw Error("UA is not connected");
             }
-            _this.setState({ callStatus: enums_1.CALL_STATUS_STOPPING });
-            _this.ua.terminateSessions(options);
-        };
-        _this.sendDTMF = function (tones, duration, interToneGap) {
-            if (duration === void 0) { duration = 100; }
-            if (interToneGap === void 0) { interToneGap = 70; }
-            if (_this.state.callStatus === 'callStatus/ACTIVE' && _this.state.dtmfSender) {
-                _this.state.dtmfSender.insertDTMF(tones, duration, interToneGap);
-            }
-            else {
-                _this.logger.debug('Warning:', 'You are attempting to send DTMF, but there is no active call.');
-            }
-        };
-        _this.setAudioSinkId = function (sinkId) { return __awaiter(_this, void 0, void 0, function () {
-            return __generator(this, function (_a) {
-                if (this.currentSinkId && sinkId === this.currentSinkId) {
-                    return [2];
-                }
-                this.currentSinkId = sinkId;
-                return [2, this.getRemoteAudioOrFail().setSinkId(sinkId)];
-            });
-        }); };
-        _this.callHold = function (useUpdate) {
-            if (useUpdate === void 0) { useUpdate = false; }
-            if (!_this.state.rtcSession) {
-                _this.logger.warn("callHold: no-op as there's no active rtcSession");
-                return;
-            }
-            var holdStatus = _this.state.rtcSession.isOnHold();
-            if (!holdStatus.local) {
-                var options = {
-                    useUpdate: useUpdate,
-                    extraHeaders: _this.props.extraHeaders.hold,
-                };
-                var done = function () {
-                    _this.setState({ callIsOnHold: true });
-                };
-                _this.state.rtcSession.hold(options, done);
-            }
-        };
-        _this.renegotiate = function (options, done) {
-            if (!_this.state.rtcSession) {
-                _this.logger.warn("renegotiate: no-op as there's no active rtcSession");
-                return;
-            }
-            _this.state.rtcSession.renegotiate(options, done);
-        };
-        _this.callUnhold = function (useUpdate) {
-            if (useUpdate === void 0) { useUpdate = false; }
-            if (!_this.state.rtcSession) {
-                _this.logger.warn("callUnhold: no-op as there's no active rtcSession");
-                return;
-            }
-            var holdStatus = _this.state.rtcSession.isOnHold();
-            if (holdStatus.local) {
-                var options = {
-                    useUpdate: useUpdate,
-                    extraHeaders: _this.props.extraHeaders.hold,
-                };
-                var done = function () {
-                    _this.setState({ callIsOnHold: false });
-                };
-                _this.state.rtcSession.unhold(options, done);
-            }
-            _this.callUnmuteMicrophone();
-            _this.getRemoteAudioOrFail().muted = false;
-            _this.getRemoteAudioOrFail().volume = 1;
-        };
-        _this.callToggleHold = function (useUpdate) {
-            if (useUpdate === void 0) { useUpdate = false; }
-            if (!_this.state.rtcSession) {
-                _this.logger.warn("callToggleHold: no-op as there's no active rtcSession");
-                return;
-            }
-            var holdStatus = _this.state.rtcSession.isOnHold();
-            return holdStatus.local ? _this.callUnhold(useUpdate) : _this.callHold(useUpdate);
-        };
-        _this.callMuteMicrophone = function () {
-            if (_this.state.rtcSession && !_this.state.callMicrophoneIsMuted) {
-                _this.state.rtcSession.mute({ audio: true, video: false });
-                _this.setState({ callMicrophoneIsMuted: true });
-            }
-        };
-        _this.callUnmuteMicrophone = function () {
-            if (_this.state.rtcSession && _this.state.callMicrophoneIsMuted) {
-                _this.state.rtcSession.unmute({ audio: true, video: false });
-                _this.setState({ callMicrophoneIsMuted: false });
-            }
-        };
-        _this.callToggleMuteMicrophone = function () {
-            return _this.state.callMicrophoneIsMuted ? _this.callUnmuteMicrophone() : _this.callMuteMicrophone();
+            _this.ua.terminateSessions();
         };
         _this.state = {
-            sipStatus: enums_1.SIP_STATUS_DISCONNECTED,
-            sipErrorType: null,
-            sipErrorMessage: null,
-            sipEvent: null,
-            rtcSession: null,
-            callStatus: enums_1.CALL_STATUS_IDLE,
-            callDirection: null,
-            callCounterpart: null,
-            dtmfSender: null,
-            callIsOnHold: false,
-            callMicrophoneIsMuted: false,
+            lineStatus: enums_1.LINE_STATUS_DISCONNECTED,
+            sipStatus: enums_1.SIP_STATUS_UNREGISTERED,
+            errorType: enums_1.SIP_ERROR_TYPE_NONE,
+            errorMessage: '',
+            callList: [],
+            callHistory: [],
         };
         _this.ua = null;
+        _this.eventBus = new EventEmitter();
         return _this;
     }
     SipProvider.prototype.getChildContext = function () {
         return {
-            sip: __assign(__assign({}, this.props), { status: this.state.sipStatus, errorType: this.state.sipErrorType, errorMessage: this.state.sipErrorMessage, event: this.state.sipEvent }),
-            call: {
-                id: 'UNKNOWN',
-                status: this.state.callStatus,
-                direction: this.state.callDirection,
-                counterpart: this.state.callCounterpart,
-                dtmfSender: this.state.dtmfSender,
-                isOnHold: this.state.callIsOnHold,
-                hold: this.callHold.bind(this),
-                unhold: this.callUnhold.bind(this),
-                toggleHold: this.callToggleHold.bind(this),
-                microphoneIsMuted: this.state.callMicrophoneIsMuted,
-                muteMicrophone: this.callMuteMicrophone.bind(this),
-                unmuteMicrophone: this.callUnmuteMicrophone.bind(this),
-                toggleMuteMicrophone: this.callToggleMuteMicrophone.bind(this),
-                renegotiate: this.renegotiate.bind(this),
-            },
+            sip: __assign(__assign({}, this.props), { addr: this._localAddr, status: this.state.sipStatus, errorType: this.state.errorType, errorMessage: this.state.errorMessage }),
+            calls: __spreadArrays(this.state.callList),
+            callHistory: __spreadArrays(this.state.callHistory),
+            isLineConnected: this.isLineConnected.bind(this),
+            isRegistered: this.isRegistered.bind(this),
+            hasError: this.hasError.bind(this),
+            getErrorMessage: this.getErrorMessage.bind(this),
             registerSip: this.registerSip.bind(this),
             unregisterSip: this.unregisterSip.bind(this),
-            audioSinkId: this.audioSinkId,
-            setAudioSinkId: this.setAudioSinkId,
-            answerCall: this.answerCall.bind(this),
-            startCall: this.startCall.bind(this),
-            stopCall: this.stopCall.bind(this),
-            sendDTMF: this.sendDTMF.bind(this),
-            getUA: this.getUA.bind(this),
+            makeCall: this.makeCall.bind(this),
+            playTone: this.playTone.bind(this),
+            stopTone: this.stopTone.bind(this),
         };
-    };
-    SipProvider.prototype.getUA = function () {
-        return this.ua;
-    };
-    SipProvider.prototype.getUAOrFail = function () {
-        var ua = this.getUA();
-        if (!ua) {
-            throw new Error('JsSIP.UA not initialized');
-        }
-        return ua;
-    };
-    SipProvider.prototype.getAudioElement = function () {
-        return this.remoteAudio;
     };
     SipProvider.prototype.componentDidMount = function () {
         if (window.document.getElementById('sip-provider-audio')) {
@@ -286,14 +257,13 @@ var SipProvider = (function (_super) {
                 "then check if you're using \"sip-provider-audio\" as id attribute for any existing " +
                 "element");
         }
-        this.remoteAudio = this.createRemoteAudioElement();
-        window.document.body.appendChild(this.remoteAudio);
-        this.reconfigureDebug();
-        this.reinitializeJsSIP();
+        this._reconfigureDebug();
+        this._initProperties();
+        this._reinitializeJsSIP();
     };
     SipProvider.prototype.componentDidUpdate = function (prevProps) {
         if (this.props.debug !== prevProps.debug) {
-            this.reconfigureDebug();
+            this._reconfigureDebug();
         }
         if (this.props.socket !== prevProps.socket ||
             this.props.host !== prevProps.host ||
@@ -303,31 +273,19 @@ var SipProvider = (function (_super) {
             this.props.user !== prevProps.user ||
             this.props.realm !== prevProps.realm ||
             this.props.password !== prevProps.password ||
-            this.props.autoRegister !== prevProps.autoRegister ||
-            this.props.inboundAudioDeviceId !== prevProps.inboundAudioDeviceId ||
-            this.props.outboundAudioDeviceId !== prevProps.outboundAudioDeviceId) {
-            this.reinitializeJsSIP();
+            this.props.autoRegister !== prevProps.autoRegister) {
+            this._reinitializeJsSIP();
         }
     };
     SipProvider.prototype.componentWillUnmount = function () {
-        this.deleteRemoteAudio();
         if (this.ua) {
+            this._terminateAll();
             this.ua.stop();
             this.ua = null;
         }
-    };
-    SipProvider.prototype.deleteRemoteAudio = function () {
-        var element;
-        try {
-            element = this.getRemoteAudioOrFail();
+        if (this._mediaEngine) {
+            this._mediaEngine.closeAll();
         }
-        catch (e) {
-            return;
-        }
-        if (element.parentNode) {
-            element.parentNode.removeChild(element);
-        }
-        this.remoteAudio = null;
     };
     SipProvider.prototype.registerSip = function () {
         if (!this.ua) {
@@ -336,8 +294,8 @@ var SipProvider = (function (_super) {
         if (this.props.autoRegister) {
             throw new Error('Calling registerSip is not allowed when autoRegister === true');
         }
-        if (this.state.sipStatus !== enums_1.SIP_STATUS_CONNECTED) {
-            throw new Error("Calling registerSip is not allowed when sip status is " + this.state.sipStatus + " (expected " + enums_1.SIP_STATUS_CONNECTED + ")");
+        if (this.state.lineStatus !== enums_1.LINE_STATUS_CONNECTED) {
+            throw new Error("Calling registerSip is not allowed when line status is " + this.state.lineStatus + " (expected " + enums_1.LINE_STATUS_CONNECTED + ")");
         }
         this.ua.register();
     };
@@ -345,374 +303,215 @@ var SipProvider = (function (_super) {
         if (!this.ua) {
             throw new Error("Calling unregisterSip is not allowed when JsSIP.UA isn't initialized");
         }
-        if (this.props.autoRegister) {
-            throw new Error('Calling registerSip is not allowed when autoRegister === true');
-        }
         if (this.state.sipStatus !== enums_1.SIP_STATUS_REGISTERED) {
-            throw new Error("Calling unregisterSip is not allowed when sip status is " + this.state.sipStatus + " (expected " + enums_1.SIP_STATUS_CONNECTED + ")");
+            throw new Error("Calling unregisterSip is not allowed when sip status is " + this.state.sipStatus + " (expected " + enums_1.SIP_STATUS_REGISTERED + ")");
         }
         this.ua.unregister(options);
     };
-    SipProvider.prototype.reconfigureDebug = function () {
+    SipProvider.prototype._reconfigureDebug = function () {
         var debug = this.props.debug;
         if (debug) {
             JsSIP.debug.enable(this.props.debugNamespaces || 'JsSIP:*');
-            this.logger = console;
+            this._logger = console;
         }
         else {
             JsSIP.debug.disable();
-            this.logger = dummyLogger_1.default;
+            this._logger = dummyLogger_1.default;
         }
     };
-    Object.defineProperty(SipProvider.prototype, "audioSinkId", {
-        get: function () {
-            var _a;
-            return ((_a = this.remoteAudio) === null || _a === void 0 ? void 0 : _a.sinkId) || 'undefined';
-        },
-        enumerable: false,
-        configurable: true
-    });
-    SipProvider.prototype.reinitializeJsSIP = function () {
+    SipProvider.prototype._reinitializeJsSIP = function () {
+        var _a;
         return __awaiter(this, void 0, void 0, function () {
-            var _a, socket, realm, user, password, autoRegister, inboundAudioDeviceId, outboundAudioDeviceId, outputDeviceId, exists, e_1, socketJsSip, ua, extraHeadersRegister;
+            var _b, socket, user, password, realm, autoRegister, socketJsSip, _c, ua, eventBus, extraHeadersRegister;
             var _this = this;
-            return __generator(this, function (_b) {
-                switch (_b.label) {
-                    case 0:
-                        if (this.ua) {
-                            this.ua.stop();
-                            this.ua = null;
-                        }
-                        _a = this.props, socket = _a.socket, realm = _a.realm, user = _a.user, password = _a.password, autoRegister = _a.autoRegister, inboundAudioDeviceId = _a.inboundAudioDeviceId, outboundAudioDeviceId = _a.outboundAudioDeviceId;
-                        if (!user) {
-                            this.setState({
-                                sipStatus: enums_1.SIP_STATUS_DISCONNECTED,
-                                sipErrorType: null,
-                                sipErrorMessage: null,
-                            });
-                            return [2];
-                        }
-                        outputDeviceId = outboundAudioDeviceId;
-                        return [4, media_1.mediaDeviceExists(outputDeviceId, 'audiooutput')];
-                    case 1:
-                        exists = _b.sent();
-                        if (!outputDeviceId || !exists) {
-                            outputDeviceId = 'default';
-                        }
-                        if (!outputDeviceId) return [3, 5];
-                        _b.label = 2;
-                    case 2:
-                        _b.trys.push([2, 4, , 5]);
-                        this.remoteAudio = this.createRemoteAudioElement();
-                        this.logger.debug("Audio.OUTBOUND: Setting sinkId to " + outputDeviceId);
-                        return [4, this.setAudioSinkId(outputDeviceId)];
-                    case 3:
-                        _b.sent();
-                        return [3, 5];
-                    case 4:
-                        e_1 = _b.sent();
-                        this.logger.error('AUDIO.OUTBOUND: Could not set sinkId', e_1);
-                        return [3, 5];
-                    case 5:
-                        try {
-                            socketJsSip = new JsSIP.WebSocketInterface(socket);
-                            this.ua = new JsSIP.UA({
-                                uri: user + "@" + realm,
-                                realm: realm,
-                                authorization_user: user,
-                                password: password,
-                                sockets: [socketJsSip],
-                                register: autoRegister,
-                            });
-                            window.UA = this.ua;
-                            window.UA_SOCKET = socketJsSip;
-                        }
-                        catch (error) {
-                            this.setState({
-                                sipStatus: enums_1.SIP_STATUS_ERROR,
-                                sipErrorType: enums_1.SIP_ERROR_TYPE_CONFIGURATION,
-                                sipErrorMessage: error.message,
-                            });
-                            return [2];
-                        }
-                        ua = this.ua;
-                        ua.on('connecting', function () {
-                            _this.logger.debug('UA "connecting" event');
-                            if (_this.ua !== ua) {
-                                return;
-                            }
-                            _this.setState({
-                                sipStatus: enums_1.SIP_STATUS_CONNECTING,
-                                sipErrorType: null,
-                                sipErrorMessage: null,
-                            });
-                        });
-                        ua.on('connected', function () {
-                            _this.logger.debug('UA "connected" event');
-                            if (_this.ua !== ua) {
-                                return;
-                            }
-                            _this.setState({
-                                sipStatus: enums_1.SIP_STATUS_CONNECTED,
-                                sipErrorType: null,
-                                sipErrorMessage: null,
-                            });
-                        });
-                        ua.on('disconnected', function () {
-                            _this.logger.debug('UA "disconnected" event');
-                            if (_this.ua !== ua) {
-                                return;
-                            }
-                            _this.setState({
-                                sipStatus: enums_1.SIP_STATUS_ERROR,
-                                sipErrorType: enums_1.SIP_ERROR_TYPE_CONNECTION,
-                                sipErrorMessage: 'disconnected',
-                            });
-                        });
-                        ua.on('registered', function (data) {
-                            _this.logger.debug('UA "registered" event', data);
-                            if (_this.ua !== ua) {
-                                return;
-                            }
-                            _this.setState({
-                                sipStatus: enums_1.SIP_STATUS_REGISTERED,
-                                callStatus: enums_1.CALL_STATUS_IDLE,
-                            });
-                        });
-                        ua.on('unregistered', function () {
-                            _this.logger.debug('UA "unregistered" event');
-                            if (_this.ua !== ua) {
-                                return;
-                            }
-                            if (ua.isConnected()) {
-                                _this.setState({
-                                    sipStatus: enums_1.SIP_STATUS_CONNECTED,
-                                    callStatus: enums_1.CALL_STATUS_IDLE,
-                                    callDirection: null,
-                                });
-                            }
-                            else {
-                                _this.setState({
-                                    sipStatus: enums_1.SIP_STATUS_DISCONNECTED,
-                                    callStatus: enums_1.CALL_STATUS_IDLE,
-                                    callDirection: null,
-                                });
-                            }
-                        });
-                        ua.on('registrationFailed', function (data) {
-                            _this.logger.debug('UA "registrationFailed" event');
-                            if (_this.ua !== ua) {
-                                return;
-                            }
-                            _this.setState({
-                                sipStatus: enums_1.SIP_STATUS_ERROR,
-                                sipErrorType: enums_1.SIP_ERROR_TYPE_REGISTRATION,
-                                sipErrorMessage: data.cause || data.response.reason_phrase,
-                            });
-                        });
-                        ua.on('sipEvent', function (data) {
-                            _this.logger.debug('UA "sipEvent" event');
-                            if (_this.ua !== ua) {
-                                return;
-                            }
-                            _this.setState(function (state) { return (__assign(__assign({}, state), { sipEvent: __assign(__assign({}, data), { _: Date.now() }) })); });
-                        });
-                        ua.on('newRTCSession', function (_a) {
-                            var originator = _a.originator, rtcSession = _a.session, rtcRequest = _a.request;
-                            window.UA_SESSION = rtcSession;
-                            if (!_this || _this.ua !== ua) {
-                                return;
-                            }
-                            var rtcSessionInState = _this.state.rtcSession;
-                            if (rtcSessionInState) {
-                                _this.logger.debug('incoming call replied with 486 "Busy Here"');
-                                rtcSession.terminate({
-                                    status_code: 486,
-                                    reason_phrase: 'Busy Here',
-                                });
-                                return;
-                            }
-                            if (originator === 'local') {
-                                var foundUri = rtcRequest.to.toString();
-                                var delimiterPosition = foundUri.indexOf(';') || null;
-                                _this.setState({
-                                    callDirection: enums_1.CALL_DIRECTION_OUTGOING,
-                                    callStatus: enums_1.CALL_STATUS_STARTING,
-                                    callCounterpart: delimiterPosition ? foundUri.substring(0, delimiterPosition) || foundUri : foundUri,
-                                    callIsOnHold: rtcSession.isOnHold().local,
-                                    callMicrophoneIsMuted: rtcSession.isMuted().audio || false,
-                                });
-                            }
-                            else if (originator === 'remote') {
-                                var foundUri = rtcRequest.from.toString();
-                                var delimiterPosition = foundUri.indexOf(';') || null;
-                                _this.setState({
-                                    callDirection: enums_1.CALL_DIRECTION_INCOMING,
-                                    callStatus: enums_1.CALL_STATUS_STARTING,
-                                    callCounterpart: delimiterPosition ? foundUri.substring(0, delimiterPosition) || foundUri : foundUri,
-                                    callIsOnHold: rtcSession.isOnHold().local,
-                                    callMicrophoneIsMuted: rtcSession.isMuted().audio || false,
-                                });
-                            }
-                            else {
-                                _this.logger.warn("call originator expected to be either local or remote. Got: " + originator);
-                            }
-                            _this.setState({ rtcSession: rtcSession });
-                            rtcSession.on('failed', function () {
-                                if (_this.ua !== ua) {
-                                    return;
-                                }
-                                if (_this.state.rtcSession && _this.state.rtcSession.connection) {
-                                    _this.state.rtcSession.connection.getSenders().forEach(function (sender) {
-                                        if (sender.track) {
-                                            sender.track.stop();
-                                        }
-                                    });
-                                }
-                                _this.setState({
-                                    rtcSession: null,
-                                    callStatus: enums_1.CALL_STATUS_IDLE,
-                                    callDirection: null,
-                                    callCounterpart: null,
-                                    dtmfSender: null,
-                                    callMicrophoneIsMuted: false,
-                                });
-                            });
-                            rtcSession.on('ended', function () {
-                                if (_this.ua !== ua) {
-                                    return;
-                                }
-                                if (_this.state.rtcSession && _this.state.rtcSession.connection) {
-                                    _this.state.rtcSession.connection.getSenders().forEach(function (sender) {
-                                        if (sender.track) {
-                                            sender.track.stop();
-                                        }
-                                    });
-                                }
-                                _this.setState({
-                                    rtcSession: null,
-                                    callStatus: enums_1.CALL_STATUS_IDLE,
-                                    callDirection: null,
-                                    callCounterpart: null,
-                                    callIsOnHold: false,
-                                    dtmfSender: null,
-                                    callMicrophoneIsMuted: false,
-                                });
-                            });
-                            rtcSession.on('unhold', function (e) {
-                                _this.logger.debug('rtcSession.unhold', e);
-                            });
-                            rtcSession.on('peerconnection', function (pc) {
-                                var remoteAudio = _this.getRemoteAudioOrFail();
-                                remoteAudio.srcObject = pc.peerconnection.getRemoteStreams()[0];
-                                pc.peerconnection.addEventListener('addstream', function (event) {
-                                    _this.logger.debug('connection.addstream', event);
-                                    var stream = event.stream;
-                                    if (stream) {
-                                        _this.logger.debug('connection.addstream: set remoteAudio.srcObject', stream);
-                                        remoteAudio.srcObject = stream;
-                                        remoteAudio
-                                            .play()
-                                            .then(function () {
-                                            _this.logger.debug('remoteAudio: playing');
-                                            _this.isPlaying = true;
-                                        })
-                                            .catch(function (e) {
-                                            _this.logger.error('remoteAudio: not playing', e);
-                                            _this.isPlaying = false;
-                                        });
-                                    }
-                                });
-                            });
-                            rtcSession.on('accepted', function () {
-                                if (_this.ua !== ua) {
-                                    return;
-                                }
-                                if (inboundAudioDeviceId) {
-                                    var constraints = { audio: { deviceId: { exact: inboundAudioDeviceId } } };
-                                    navigator.mediaDevices
-                                        .getUserMedia(constraints)
-                                        .then(function (stream) {
-                                        stream.getAudioTracks().forEach(function (track) {
-                                            if (track) {
-                                                _this.logger.debug("AUDIO.INBOUND: Attaching track", track);
-                                                rtcSession.connection.getSenders().forEach(function (sender) {
-                                                    _this.logger.debug('AUDIO.INBOUND: Replacing track', { sender: sender }, { track: track });
-                                                    sender.replaceTrack(track);
-                                                });
-                                            }
-                                        });
-                                    })
-                                        .catch(function (e) {
-                                        _this.logger.error('AUDIO.INBOUND: Invalid audio device passed.', e);
-                                    });
-                                }
-                                _this.setState({
-                                    dtmfSender: rtcSession.connection.getSenders().filter(function (x) { return x.dtmf; })[0].dtmf,
-                                });
-                                _this.setState({ callStatus: enums_1.CALL_STATUS_ACTIVE });
-                            });
-                            _this.handleAutoAnswer();
-                        });
-                        extraHeadersRegister = this.props.extraHeaders.register || [];
-                        if (extraHeadersRegister.length) {
-                            ua.registrator().setExtraHeaders(extraHeadersRegister);
-                        }
-                        ua.start();
-                        return [2];
+            return __generator(this, function (_d) {
+                if (this.ua) {
+                    this.ua.stop();
+                    this.ua = null;
                 }
+                _b = this.props, socket = _b.socket, user = _b.user, password = _b.password, realm = _b.realm, autoRegister = _b.autoRegister;
+                this._localAddr = user + "@" + realm;
+                if (!user) {
+                    this.setState({
+                        sipStatus: enums_1.SIP_STATUS_UNREGISTERED,
+                        errorType: enums_1.SIP_ERROR_TYPE_CONFIGURATION,
+                        errorMessage: 'user parameter is missing in config',
+                    });
+                    return [2];
+                }
+                try {
+                    socketJsSip = new JsSIP.WebSocketInterface(socket);
+                    this.ua = new JsSIP.UA({
+                        uri: user + "@" + realm,
+                        authorization_user: user,
+                        realm: realm,
+                        password: password,
+                        sockets: [socketJsSip],
+                        register: autoRegister,
+                        session_timers: (_a = this._uaConfig) === null || _a === void 0 ? void 0 : _a.sessionTimers,
+                    });
+                    window.UA = this.ua;
+                    window.UA_SOCKET = socketJsSip;
+                }
+                catch (error) {
+                    console.log(error.message);
+                    this.setState({
+                        sipStatus: enums_1.SIP_STATUS_ERROR,
+                        errorType: enums_1.SIP_ERROR_TYPE_CONFIGURATION,
+                        errorMessage: error.message,
+                    });
+                    this._logger.debug(error.message);
+                    return [2];
+                }
+                _c = this, ua = _c.ua, eventBus = _c.eventBus;
+                ua.on('connecting', function () {
+                    _this._logger.debug('UA "connecting" event');
+                    if (_this.ua !== ua) {
+                        return;
+                    }
+                    _this.setState({
+                        lineStatus: enums_1.LINE_STATUS_CONNECTING,
+                    });
+                });
+                ua.on('connected', function () {
+                    _this._logger.debug('UA "connected" event');
+                    if (_this.ua !== ua) {
+                        return;
+                    }
+                    _this.setState({
+                        lineStatus: enums_1.LINE_STATUS_CONNECTED,
+                        errorType: enums_1.SIP_ERROR_TYPE_NONE,
+                        errorMessage: '',
+                    });
+                });
+                ua.on('disconnected', function () {
+                    _this._logger.debug('UA "disconnected" event');
+                    if (_this.ua !== ua) {
+                        return;
+                    }
+                    _this.setState({
+                        lineStatus: enums_1.LINE_STATUS_DISCONNECTED,
+                        sipStatus: enums_1.SIP_STATUS_ERROR,
+                        errorType: enums_1.SIP_ERROR_TYPE_CONNECTION,
+                        errorMessage: 'disconnected',
+                    });
+                });
+                ua.on('registered', function (data) {
+                    _this._logger.debug('UA "registered" event', data);
+                    if (_this.ua !== ua) {
+                        return;
+                    }
+                    _this.setState({
+                        sipStatus: enums_1.SIP_STATUS_REGISTERED,
+                        errorType: enums_1.SIP_ERROR_TYPE_NONE,
+                        errorMessage: '',
+                    });
+                });
+                ua.on('unregistered', function () {
+                    _this._logger.debug('UA "unregistered" event');
+                    if (_this.ua !== ua) {
+                        return;
+                    }
+                    _this.setState({
+                        sipStatus: enums_1.SIP_STATUS_UNREGISTERED,
+                    });
+                });
+                ua.on('registrationFailed', function (data) {
+                    _this._logger.debug('UA "registrationFailed" event');
+                    console.log(data.cause);
+                    if (_this.ua !== ua) {
+                        return;
+                    }
+                    _this.setState({
+                        sipStatus: enums_1.SIP_STATUS_ERROR,
+                        errorType: enums_1.SIP_ERROR_TYPE_REGISTRATION,
+                        errorMessage: data.cause === undefined ? '' : data.cause,
+                    });
+                });
+                ua.on('newRTCSession', function (data) {
+                    var callList = _this.state.callList;
+                    if (!_this || _this.ua !== ua) {
+                        return;
+                    }
+                    var originator = data.originator, session = data.session;
+                    if (originator === 'remote') {
+                        var remoteName = session.remote_identity.display_name;
+                        if (remoteName === null || remoteName === '') {
+                            remoteName = session.remote_identity.uri.user;
+                        }
+                        if (!_this._isCallAllowed()) {
+                            var rejectOptions = {
+                                status_code: 486,
+                                reason_phrase: 'Busy Here',
+                            };
+                            session.terminate(rejectOptions);
+                            return;
+                        }
+                        var sipCall = new sipcall_1.SipCall(true, remoteName, _this._getCallConfig(), _this._getRTCConfig(), _this._getDtmfOptions(), _this._mediaEngine, _this.eventBus);
+                        sipCall.onNewRTCSession(session);
+                        callList.push(sipCall);
+                        _this.setState({ callList: callList });
+                    }
+                    else {
+                        var outCall = callList.find(function (call) { return call.isDialing() === true; });
+                        if (outCall !== undefined) {
+                            outCall.onNewRTCSession(session);
+                        }
+                    }
+                });
+                eventBus.on('call.update', function (event) {
+                    var call = event.call;
+                    var callList = _this.state.callList;
+                    console.log('Event emitter on call.update');
+                    console.log(event.call.getCallStatus());
+                    var index = callList.findIndex(function (item) { return item.getId() === call.getId(); });
+                    if (index !== -1) {
+                        callList[index] = call;
+                        _this.setState({ callList: callList });
+                    }
+                });
+                eventBus.on('call.ended', function (event) {
+                    var call = event.call;
+                    var callList = _this.state.callList;
+                    console.log('Event emitter on call.ended');
+                    var index = callList.findIndex(function (item) { return item.getId() === call.getId(); });
+                    if (index !== -1) {
+                        callList.splice(index, 1);
+                        _this.setState({ callList: callList });
+                        _this._addToHistory(call);
+                    }
+                    console.log(callList);
+                });
+                extraHeadersRegister = this.props.extraHeaders.register || [];
+                if (extraHeadersRegister.length) {
+                    ua.registrator().setExtraHeaders(extraHeadersRegister);
+                }
+                ua.start();
+                return [2];
             });
         });
-    };
-    SipProvider.prototype.handleAutoAnswer = function () {
-        if (this.state.callDirection === enums_1.CALL_DIRECTION_INCOMING && this.props.autoAnswer) {
-            this.logger.log('Answer auto ON');
-            this.answerCall();
-        }
-        else if (this.state.callDirection === enums_1.CALL_DIRECTION_INCOMING && !this.props.autoAnswer) {
-            this.logger.log('Answer auto OFF');
-        }
-        else if (this.state.callDirection === enums_1.CALL_DIRECTION_OUTGOING) {
-            this.logger.log('OUTGOING call');
-        }
     };
     SipProvider.prototype.render = function () {
         return this.props.children;
     };
-    SipProvider.prototype.getRemoteAudioOrFail = function () {
-        if (!this.remoteAudio) {
-            throw new Error('remoteAudio is not initiliazed');
-        }
-        return this.remoteAudio;
-    };
-    SipProvider.prototype.createRemoteAudioElement = function () {
-        var id = 'sip-provider-audio';
-        var el = window.document.getElementById(id);
-        if (el) {
-            return el;
-        }
-        el = window.document.createElement('audio');
-        el.id = id;
-        el.autoplay = true;
-        window.document.body.appendChild(el);
-        return el;
-    };
     SipProvider.childContextTypes = {
         sip: types_1.sipPropType,
-        call: types_1.callPropType,
+        calls: types_1.callInfoListPropType,
+        callHistory: types_1.callHistoryPropType,
+        isLineConnected: PropTypes.func,
+        isRegistered: PropTypes.func,
+        hasError: PropTypes.func,
+        getErrorMessage: PropTypes.func,
         registerSip: PropTypes.func,
         unregisterSip: PropTypes.func,
-        answerCall: PropTypes.func,
-        startCall: PropTypes.func,
-        stopCall: PropTypes.func,
-        sendDTMF: PropTypes.func,
-        getUA: PropTypes.any,
-        audioSinkId: PropTypes.string,
-        setAudioSinkId: PropTypes.func,
+        makeCall: PropTypes.func,
+        playTone: PropTypes.func,
+        stopTone: PropTypes.func,
     };
     SipProvider.propTypes = {
         socket: PropTypes.string,
         user: PropTypes.string,
+        uri: PropTypes.string,
         password: PropTypes.string,
         realm: PropTypes.string,
         secure: PropTypes.bool,
@@ -722,9 +521,9 @@ var SipProvider = (function (_super) {
         sessionTimersExpires: PropTypes.number,
         extraHeaders: types_1.extraHeadersPropType,
         iceServers: types_1.iceServersPropType,
+        maxAllowedCalls: PropTypes.number,
         debug: PropTypes.bool,
-        inboundAudioDeviceId: PropTypes.string,
-        outboundAudioDeviceId: PropTypes.string,
+        registrar: PropTypes.string,
         children: PropTypes.node,
     };
     SipProvider.defaultProps = {
@@ -738,11 +537,18 @@ var SipProvider = (function (_super) {
         autoAnswer: false,
         iceRestart: false,
         sessionTimersExpires: 120,
-        extraHeaders: { register: [], invite: [], hold: [] },
+        maxAllowedCalls: 4,
+        extraHeaders: {
+            register: [],
+            invite: [],
+            nonInvite: [],
+            info: [],
+            refer: [],
+            resp2xx: [],
+            resp4xx: [],
+        },
         iceServers: [],
         debug: false,
-        inboundAudioDeviceId: '',
-        outboundAudioDeviceId: '',
         children: null,
     };
     return SipProvider;
