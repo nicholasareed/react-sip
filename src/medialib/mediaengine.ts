@@ -181,7 +181,7 @@ export class MediaEngine {
     this._enableAudioChannels(true);
   };
   // TODO: Implement playing tones
-  playTone = (name: string, volume: number): void => {
+  playTone = (name: string, volume: number=1.0): void => {
     // play tone to the output device
     if (volume === undefined) {
       volume = 1.0

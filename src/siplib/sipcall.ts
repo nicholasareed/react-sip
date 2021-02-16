@@ -12,22 +12,22 @@ import {
   CallStatus,
   MEDIA_DEVICE_STATUS_ACTIVE,
   MEDIA_DEVICE_STATUS_MUTE,
+  MediaDeviceStatus,
   MEDIA_SESSION_STATUS_IDLE,
   MEDIA_SESSION_STATUS_ACTIVE,
   MEDIA_SESSION_STATUS_INACTIVE,
   MEDIA_SESSION_STATUS_RECVONLY,
   MEDIA_SESSION_STATUS_SENDONLY,
   MediaSessionStatus,
-  MediaDeviceStatus,
-  CallDirection,
   CALL_DIRECTION_INCOMING,
   CALL_DIRECTION_OUTGOING,
-  TransferStatus,
+  CallDirection,
   TRANSFER_STATUS_NONE,
   TRANSFER_STATUS_INITIATED,
   TRANSFER_STATUS_REFER_SUCCESS,
   TRANSFER_STATUS_FAILED,
-  TRANSFER_STATUS_COMPLETE
+  TRANSFER_STATUS_COMPLETE,
+  TransferStatus
 } from "..";
 import { SipExtraHeaders } from "./sipua";
 
@@ -115,6 +115,7 @@ export class SipCall {
     if (isIncoming === true) {
       this.setCallStatus(CALL_STATUS_RINGING);
       this._direction = CALL_DIRECTION_INCOMING;
+      // tmp: move playing tone to app
       this._mediaEngine.playTone('ringing', 1.0);
     } else {
       this.remoteUser = this.remoteName;
