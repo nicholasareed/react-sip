@@ -388,6 +388,9 @@ export class SipCall {
       this._mediaEngine.closeStream(inputStream);
       this.setInputMediaStream(null);
     }
+    if (this.getCallStatus() === CALL_STATUS_PROGRESS) {
+      this._mediaEngine.stopTone('ringback');
+    }
   };
 
   // send DTMF
@@ -793,6 +796,11 @@ export class SipCall {
         this.endTime = rtcSession?.end_time.toString();
       }
       this._endType = 'hangup';
+      if (this.getCallStatus() === CALL_STATUS_RINGING) {
+        this._mediaEngine.stopTone('ringing');
+      } else if(this.getCallStatus() === CALL_STATUS_PROGRESS) {
+        this._mediaEngine.stopTone('ringback');
+      }
       this.setCallStatus(CALL_STATUS_IDLE);
       this.setMediaSessionStatus(MEDIA_SESSION_STATUS_IDLE);
       this._eventEmitter.emit('call.ended', {'call': this});
@@ -806,6 +814,11 @@ export class SipCall {
       if(this._inputMediaStream) {
         this._mediaEngine.closeStream(this._inputMediaStream);
         this.setInputMediaStream(null);
+      }
+      if (this.getCallStatus() === CALL_STATUS_RINGING) {
+        this._mediaEngine.stopTone('ringing');
+      } else if(this.getCallStatus() === CALL_STATUS_PROGRESS) {
+        this._mediaEngine.stopTone('ringback');
       }
       this._endType = 'failure';
       this._errorCause = `${originator}: ${reason}`;

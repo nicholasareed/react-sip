@@ -193,6 +193,7 @@ export class MediaEngine {
     toneRes.audio.pause();
     toneRes.audio.currentTime = 0.0;
     toneRes.audio.volume = (toneRes.volume || 1.0) * volume;
+    toneRes.audio.loop = true;
     toneRes.audio.play()
       .catch((err) => {
         // log the error
