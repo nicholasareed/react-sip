@@ -259,6 +259,9 @@ var SipCall = (function () {
                 _this._mediaEngine.closeStream(inputStream);
                 _this.setInputMediaStream(null);
             }
+            if (_this.getCallStatus() === __1.CALL_STATUS_PROGRESS) {
+                _this._mediaEngine.stopTone('ringback');
+            }
         };
         this.sendDTMF = function (tones) {
             if (!_this.isSessionActive()) {
@@ -594,6 +597,12 @@ var SipCall = (function () {
                     _this.endTime = rtcSession === null || rtcSession === void 0 ? void 0 : rtcSession.end_time.toString();
                 }
                 _this._endType = 'hangup';
+                if (_this.getCallStatus() === __1.CALL_STATUS_RINGING) {
+                    _this._mediaEngine.stopTone('ringing');
+                }
+                else if (_this.getCallStatus() === __1.CALL_STATUS_PROGRESS) {
+                    _this._mediaEngine.stopTone('ringback');
+                }
                 _this.setCallStatus(__1.CALL_STATUS_IDLE);
                 _this.setMediaSessionStatus(__1.MEDIA_SESSION_STATUS_IDLE);
                 _this._eventEmitter.emit('call.ended', { 'call': _this });
@@ -606,6 +615,12 @@ var SipCall = (function () {
                 if (_this._inputMediaStream) {
                     _this._mediaEngine.closeStream(_this._inputMediaStream);
                     _this.setInputMediaStream(null);
+                }
+                if (_this.getCallStatus() === __1.CALL_STATUS_RINGING) {
+                    _this._mediaEngine.stopTone('ringing');
+                }
+                else if (_this.getCallStatus() === __1.CALL_STATUS_PROGRESS) {
+                    _this._mediaEngine.stopTone('ringback');
                 }
                 _this._endType = 'failure';
                 _this._errorCause = originator + ": " + reason;
