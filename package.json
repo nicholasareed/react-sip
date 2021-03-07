@@ -42,7 +42,8 @@
     "dependencies": {
         "eventemitter3": "^4.0.7",
         "jssip": "^3.7.0",
-        "prop-types": "^15.7.2"
+        "prop-types": "^15.7.2",
+        "sdp-transform": "^2.14.1"
     },
     "peerDependencies": {
         "react": ">=15.0"

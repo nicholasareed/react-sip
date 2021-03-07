@@ -85,6 +85,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     // media
     playTone: PropTypes.func,
     stopTone: PropTypes.func,
+    getMediaDevices: PropTypes.func,
   };
 
   static propTypes = {
@@ -182,6 +183,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       makeCall: this.makeCall.bind(this),
       playTone: this.playTone.bind(this),
       stopTone: this.stopTone.bind(this),
+      getMediaDevices: this.getMediaDevices.bind(this)
     };
   }
 
@@ -376,7 +378,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     this.ua.unregister(options);
   }
 
-  makeCall = (callee: string, isVideoCall: boolean): string => {
+  makeCall = (callee: string, isVideoCall: boolean, localVideoEl: HTMLMediaElement, remoteVideoEl: HTMLMediaElement): string => {
     if (!callee) {
       throw new Error(`Destination must be defined (${callee} given)`);
     }
@@ -411,9 +413,8 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     );
     const ua = this._getUA();
 
-    // create Input MediaStream from MediaDevice
     // @ts-ignore
-    sipCall.dial(ua, callee, true, true);
+    sipCall.dial(ua, callee, true, isVideoCall, localVideoEl, remoteVideoEl);
     callList.push(sipCall);
     this.setState({ callList });
 
@@ -424,6 +425,10 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
   };
   stopTone = (tone: string) => {
     this._mediaEngine.stopTone(tone);
+  };
+  // available devices
+  getMediaDevices = (deviceKind: MediaDeviceKind) => {
+    return this._mediaEngine.availableDevices(deviceKind);
   };
   // Clear all existing sessions from the UA
   _terminateAll = () => {

@@ -60,13 +60,13 @@ export type MediaDeviceStatus =
   | 'mediaDeviceStatus/ACTIVE'
   | 'mediaDeviceStatus/MUTE';
 
-export const MEDIA_DEVICE_KIND_AUDIO_IN = 'mediaDeviceKind/AUDIO_IN';
-export const MEDIA_DEVICE_KIND_AUDIO_OUT = 'mediaDeviceKind/AUDIO_OUT';
-export const MEDIA_DEVICE_KIND_VIDEO_IN = 'mediaDeviceKind/VIDEO_IN'
+export const MEDIA_DEVICE_KIND_AUDIO_IN = 'audioinput';
+export const MEDIA_DEVICE_KIND_AUDIO_OUT = 'audiooutput';
+export const MEDIA_DEVICE_KIND_VIDEO_IN = 'videoinput'
 export type MediaDeviceKind =
-  | 'mediaDeviceKind/AUDIO_IN'
-  | 'mediaDeviceKind/AUDIO_OUT'
-  | 'mediaDeviceKind/VIDEO_IN';
+  | 'audioinput'
+  | 'audiooutput'
+  | 'videoinput';
 
 export const MEDIA_TONE_RINGING = 'mediaTone/RINGING';
 export const MEDIA_TONE_DIALING = 'mediaTone/DIALING';
@@ -86,3 +86,12 @@ export type TransferStatus =
   | 'transfer/REFER_SUCCESS'
   | 'transfer/COMPLETE';
 
+export const SDP_OFFER_PENDING = 'sdp/OFFER_PENDING';
+export const SDP_OFFER_SENT = 'sdp/OFFER_SENT';
+export const SDP_OFFER_RECEIVED = 'sdp/OFFER_RECEIVED';
+export const SDP_OFFER_ANSWER_COMPLETE = 'sdp/OFFER_ANSWER_COMPLETE';
+export type SdpOfferAnswerStatus =
+  | 'sdp/OFFER_PENDING'
+  | 'sdp/OFFER_SENT'
+  | 'sdp/OFFER_RECEIVED'
+  | 'sdp/OFFER_ANSWER_COMPLETE';
