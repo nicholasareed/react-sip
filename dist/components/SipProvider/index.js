@@ -184,7 +184,7 @@ var SipProvider = (function (_super) {
             var callHistory = __spreadArrays([callInfo], _this.state.callHistory);
             _this.setState({ callHistory: callHistory });
         };
-        _this.makeCall = function (callee, isVideoCall) {
+        _this.makeCall = function (callee, isVideoCall, localVideoEl, remoteVideoEl) {
             if (!callee) {
                 throw new Error("Destination must be defined (" + callee + " given)");
             }
@@ -206,7 +206,7 @@ var SipProvider = (function (_super) {
             var dtmfOptions = _this._getDtmfOptions();
             var sipCall = new sipcall_1.SipCall(false, callee, _this._getCallConfig(), rtcConfig, dtmfOptions, _this._mediaEngine, _this.eventBus);
             var ua = _this._getUA();
-            sipCall.dial(ua, callee, true, true);
+            sipCall.dial(ua, callee, true, isVideoCall, localVideoEl, remoteVideoEl);
             callList.push(sipCall);
             _this.setState({ callList: callList });
             return sipCall.getId();
@@ -216,6 +216,9 @@ var SipProvider = (function (_super) {
         };
         _this.stopTone = function (tone) {
             _this._mediaEngine.stopTone(tone);
+        };
+        _this.getMediaDevices = function (deviceKind) {
+            return _this._mediaEngine.availableDevices(deviceKind);
         };
         _this._terminateAll = function () {
             if (!_this.ua) {
@@ -249,6 +252,7 @@ var SipProvider = (function (_super) {
             makeCall: this.makeCall.bind(this),
             playTone: this.playTone.bind(this),
             stopTone: this.stopTone.bind(this),
+            getMediaDevices: this.getMediaDevices.bind(this)
         };
     };
     SipProvider.prototype.componentDidMount = function () {
@@ -507,6 +511,7 @@ var SipProvider = (function (_super) {
         makeCall: PropTypes.func,
         playTone: PropTypes.func,
         stopTone: PropTypes.func,
+        getMediaDevices: PropTypes.func,
     };
     SipProvider.propTypes = {
         socket: PropTypes.string,

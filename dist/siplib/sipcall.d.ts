@@ -1,7 +1,7 @@
 import * as JsSIP from 'jssip';
 import * as EventEmitter from 'eventemitter3';
 import { RTCSession } from "jssip/lib/RTCSession";
-import { CallStatus, MediaDeviceStatus, MediaSessionStatus, CallDirection, TransferStatus } from "..";
+import { CallStatus, MediaDeviceStatus, MediaSessionStatus, CallDirection, TransferStatus, SdpOfferAnswerStatus } from "..";
 import { SipExtraHeaders } from "./sipua";
 import { Logger } from "../lib/types";
 import { DTMF_TRANSPORT } from "jssip/lib/Constants";
@@ -22,6 +22,16 @@ export interface OutputMediaStream {
         video: HTMLVideoElement;
     };
 }
+export interface PayloadInfo {
+    num: number;
+    codec: string;
+    params: string;
+}
+export interface SdpMediaInfo {
+    type: string;
+    mode: string;
+    payloads: PayloadInfo[];
+}
 export declare class SipCall {
     _id: string;
     _callStatus: CallStatus;
@@ -39,7 +49,7 @@ export declare class SipCall {
     _debug: boolean;
     _debugNamespaces?: string;
     _inputMediaStream: MediaStream | null;
-    _outputMediaStream: MediaStream;
+    _outputMediaStream: MediaStream | null;
     _peerConnection: RTCPeerConnection | null;
     _mediaEngine: MediaEngine;
     _eventEmitter: EventEmitter;
@@ -47,6 +57,13 @@ export declare class SipCall {
     _errorCause: string;
     _isPlaying: boolean;
     _direction: CallDirection;
+    _hasLocalVideo: boolean;
+    _hasRemoteVideo: boolean;
+    _localVideoEl: HTMLMediaElement | null;
+    _remoteVideoEl: HTMLMediaElement | null;
+    _sdpStatus: SdpOfferAnswerStatus;
+    _localMedia: SdpMediaInfo[];
+    _remoteMedia: SdpMediaInfo[];
     startTime: string | undefined;
     endTime: string | undefined;
     remoteUri: string;
@@ -65,12 +82,15 @@ export declare class SipCall {
     isEstablished: () => boolean;
     isActive: () => boolean;
     isMediaActive: () => boolean;
+    isVideoCall: () => boolean;
+    hasLocalVideo: () => boolean;
+    hasRemoteVideo: () => boolean;
     getMediaSessionStatus: () => MediaSessionStatus;
     setMediaSessionStatus: (status: MediaSessionStatus) => void;
     getDtmfOptions: () => DtmfOptions;
     getRTCConfig: () => RTCConfiguration;
     getRTCOfferConstraints: () => RTCOfferOptions;
-    setInputMediaStream: (stream: MediaStream | null) => void;
+    _setInputMediaStream: (stream: MediaStream | null) => void;
     getInputMediaStream: () => MediaStream | null;
     onNewRTCSession: (rtcSession: RTCSession) => void;
     setPeerConnection: (conn: RTCPeerConnection | null) => void;
@@ -82,8 +102,8 @@ export declare class SipCall {
     getDisposition: () => string;
     _configureDebug: () => void;
     _uuid: () => string;
-    dial: (ua: JsSIP.UA, target: string, hasAudio: boolean, hasVideo: boolean) => void;
-    accept: (hasAudio?: boolean, hasVideo?: boolean) => void;
+    dial: (ua: JsSIP.UA, target: string, hasAudio: boolean, hasVideo: boolean, localVideoEl?: HTMLMediaElement | null, remoteVideoEl?: HTMLMediaElement | null) => void;
+    accept: (hasAudio?: boolean, hasVideo?: boolean, localVideoEl?: HTMLMediaElement | null, remoteVideoEl?: HTMLMediaElement | null) => void;
     reject: (code?: number, reason?: string) => void;
     hangup: () => void;
     sendDTMF: (tones: string) => void;
@@ -111,5 +131,8 @@ export declare class SipCall {
     _onTransferAcceptNotify: (data: any) => void;
     _onTransferFailureNotify: (data: any) => void;
     _handleRemoteTrack: (track: MediaStreamTrack) => void;
+    _handleLocalSdp: (sdp: string) => void;
+    _handleRemoteOffer: (sdp: string) => void;
+    _handleRemoteAnswer: (sdp: string) => void;
     _initSessionEventHandler: () => void;
 }

@@ -67,10 +67,11 @@ var MediaEngine = (function () {
             var opts;
             var _this = this;
             return __generator(this, function (_a) {
+                console.log(this._availableDevices);
                 opts = this._getMediaConstraints(audio, video);
                 if (this._isCapturing) {
                     return [2, navigator.mediaDevices.getUserMedia(opts).then(function (mediaStream) {
-                            return _this._startStreams(mediaStream);
+                            return _this._startInputStreams(mediaStream);
                         }).catch(function (err) {
                             return null;
                         })];
@@ -95,12 +96,12 @@ var MediaEngine = (function () {
                                 });
                                 return unattachedStream;
                             }).then(function (stream) {
-                                _this._attachMediaStream(stream, 'audio');
-                                _this._attachMediaStream(stream, 'video');
+                                _this._attachMediaStream(stream, 'audio', 'in');
+                                _this._attachMediaStream(stream, 'video', 'in');
                                 return stream;
                             });
                         }).then(function (tobeStarted) {
-                            return _this._startStreams(tobeStarted);
+                            return _this._startInputStreams(tobeStarted);
                         })];
                 }
                 return [2];
@@ -117,32 +118,6 @@ var MediaEngine = (function () {
                 _this._openedStreams.splice(index, 1);
             }
         };
-        this.addTrack = function (mediaStream, track) {
-            var trackExists = mediaStream.getTracks().find(function (t) { return t.id === track.id; });
-            if (!trackExists) {
-                mediaStream.addTrack(track);
-            }
-            var element = _this._config[track.kind]['out'].element;
-            if (element) {
-                element.srcObject = mediaStream;
-                element.play()
-                    .then(function () {
-                })
-                    .catch(function (err) {
-                });
-            }
-        };
-        this.startOutputStream = function (mediaStream) {
-            var element = _this._config['audio']['out'].element;
-            if (element) {
-                element.srcObject = mediaStream;
-                element.play()
-                    .then(function () {
-                })
-                    .catch(function (err) {
-                });
-            }
-        };
         this.closeAll = function () {
             _this._openedStreams.forEach(function (mediaStream) {
                 mediaStream.getTracks().forEach(function (track) {
@@ -156,8 +131,24 @@ var MediaEngine = (function () {
                 mediaStream.getTracks().forEach(function (track) {
                     mediaStream.removeTrack(track);
                 });
-                _this._isCapturing = false;
             });
+            _this._isCapturing = false;
+            _this._isPlaying = false;
+        };
+        this.startOrUpdateOutStreams = function (mediaStream, track, audioElement, videoElement) {
+            if (!_this._isPlaying) {
+                if (audioElement) {
+                    var audioOut = _this._config.audio.out;
+                    audioOut.element = audioElement;
+                    audioOut.element.setSinkId(audioOut.deviceIds[0]);
+                    audioOut.element.autoplay = true;
+                }
+                if (videoElement) {
+                    _this._config.video['out'].element = videoElement;
+                }
+                _this._isPlaying = true;
+            }
+            _this._addTrack(mediaStream, track, 'out');
         };
         this.muteAudio = function () {
             _this._enableAudioChannels(false);
@@ -209,7 +200,36 @@ var MediaEngine = (function () {
             }
             return false;
         };
-        this._startStreams = function (mediaStream) {
+        this.changeDevice = function (deviceKind, deviceId) { return __awaiter(_this, void 0, void 0, function () {
+            return __generator(this, function (_a) {
+                return [2];
+            });
+        }); };
+        this._addTrack = function (mediaStream, track, direction) {
+            var trackExists = mediaStream.getTracks().find(function (t) { return t.id === track.id; });
+            if (!trackExists) {
+                mediaStream.addTrack(track);
+            }
+            var element = _this._config[track.kind][direction].element;
+            if (element) {
+                element.srcObject = mediaStream;
+                element.play()
+                    .then(function () {
+                })
+                    .catch(function (err) {
+                });
+            }
+            track.addEventListener('unmute', function (event) {
+                console.log('Received track unmute event');
+            });
+            track.addEventListener('mute', function (event) {
+                console.log('Received track mute event');
+            });
+            track.addEventListener('ended', function (event) {
+                console.log('Received track ended event');
+            });
+        };
+        this._startInputStreams = function (mediaStream) {
             var newStream = new MediaStream();
             mediaStream.getTracks().forEach(function (track) {
                 newStream.addTrack(track.clone());
@@ -239,25 +259,50 @@ var MediaEngine = (function () {
         this._isVideoEnabled = function () {
             return _this._config.video.in.enabled;
         };
-        this._initDevices = function () {
+        this._refreshDevices = function () {
+            var channels = ['audioinput', 'audiooutput', 'videoinput'];
+            var deviceList = [];
             navigator.mediaDevices.enumerateDevices()
                 .then(function (devices) {
                 devices.forEach(function (deviceInfo) {
-                    var isRequired = ['audioinput', 'audiooutput', 'videoinput'].includes(deviceInfo.kind);
-                    if (isRequired) {
-                        _this._availableDevices.push(deviceInfo);
+                    var isSupported = channels.includes(deviceInfo.kind);
+                    if (isSupported) {
+                        deviceList.push(deviceInfo);
                     }
                 });
+                var oldList = _this._availableDevices;
+                _this._availableDevices = [];
+                deviceList.forEach(function (device) {
+                    var index = oldList.findIndex(function (item) {
+                        return (item.deviceId === device.deviceId && item.kind === device.kind);
+                    });
+                    if (index < 0) {
+                    }
+                    else {
+                        oldList.splice(index, 1);
+                    }
+                    _this._availableDevices.push(device);
+                });
+                console.log(oldList);
             })
                 .catch(function (err) {
                 console.log("Enumerate devices error " + err.cause);
             });
         };
+        this._initDevices = function () {
+            _this._refreshDevices();
+            navigator.mediaDevices.ondevicechange = function (event) {
+                console.log("On media device change");
+                _this._refreshDevices();
+            };
+        };
         this._getMediaConstraints = function (isAudio, isVideo) {
             var constraints = {
                 audio: isAudio,
-                video: isVideo,
             };
+            if (isVideo) {
+                constraints['video'] = true;
+            }
             if (isAudio &&
                 _this._config.audio.in.deviceIds.length > 0) {
                 constraints.audio = {
@@ -272,38 +317,21 @@ var MediaEngine = (function () {
             }
             return constraints;
         };
-        this._initInputStreams = function () {
-            var constraints = _this._getMediaConstraints(_this._isAudioEnabled(), _this._isVideoEnabled());
-            navigator.mediaDevices.getUserMedia(constraints).then(function (mediaStream) {
-                mediaStream.getTracks().forEach(function (track) {
-                    if (track && track !== undefined) {
-                        track.stop();
-                        _this._attachMediaStream(mediaStream, track.kind);
-                        mediaStream.addTrack(track);
-                    }
-                });
-            }).catch(function (err) {
-            });
-        };
-        this._attachMediaStream = function (mediaStream, trackKind) {
+        this._attachMediaStream = function (mediaStream, trackKind, direction) {
             var _a, _b;
             var element = null;
             if (trackKind === 'audio') {
-                element = (_a = _this._config) === null || _a === void 0 ? void 0 : _a.audio.in.element;
+                element = (_a = _this._config) === null || _a === void 0 ? void 0 : _a.audio[direction].element;
             }
             else if (trackKind === 'video') {
-                element = (_b = _this._config) === null || _b === void 0 ? void 0 : _b.video.in.element;
+                element = (_b = _this._config) === null || _b === void 0 ? void 0 : _b.video[direction].element;
             }
             if (element && element !== undefined && element.srcObject.id !== mediaStream.id) {
                 element.srcObject = mediaStream;
             }
         };
-        this.changeDevice = function (deviceKind, deviceId) { return __awaiter(_this, void 0, void 0, function () {
-            return __generator(this, function (_a) {
-                return [2];
-            });
-        }); };
         this._isCapturing = false;
+        this._isPlaying = false;
         this._availableDevices = [];
         this._openedStreams = [];
         this._supportedDeviceTypes = ['audioinput', 'audiooutput', 'videoinput'];

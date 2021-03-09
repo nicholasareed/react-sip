@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SipCall = void 0;
 var JsSIP = require("jssip");
+var sdpTransform = require("sdp-transform");
 var dummyLogger_1 = require("../lib/dummyLogger");
 var __1 = require("..");
 var SipCall = (function () {
@@ -67,6 +68,15 @@ var SipCall = (function () {
             }
             return false;
         };
+        this.isVideoCall = function () {
+            return _this._hasLocalVideo;
+        };
+        this.hasLocalVideo = function () {
+            return _this._hasLocalVideo;
+        };
+        this.hasRemoteVideo = function () {
+            return _this._hasRemoteVideo;
+        };
         this.getMediaSessionStatus = function () {
             return _this._mediaSessionStatus;
         };
@@ -84,7 +94,7 @@ var SipCall = (function () {
                 iceRestart: false,
             };
         };
-        this.setInputMediaStream = function (stream) {
+        this._setInputMediaStream = function (stream) {
             _this._inputMediaStream = stream;
         };
         this.getInputMediaStream = function () {
@@ -172,10 +182,20 @@ var SipCall = (function () {
                 return v.toString(16);
             });
         };
-        this.dial = function (ua, target, hasAudio, hasVideo) {
+        this.dial = function (ua, target, hasAudio, hasVideo, localVideoEl, remoteVideoEl) {
+            if (localVideoEl === void 0) { localVideoEl = null; }
+            if (remoteVideoEl === void 0) { remoteVideoEl = null; }
+            if (hasVideo) {
+                _this._hasLocalVideo = true;
+                _this._localVideoEl = localVideoEl;
+                _this._remoteVideoEl = remoteVideoEl;
+            }
             _this._mediaEngine.openStreams(hasAudio, hasVideo).then(function (stream) {
                 if (!stream) {
                     throw Error('Failed to open the input streams');
+                }
+                if (hasVideo && localVideoEl) {
+                    localVideoEl.srcObject = stream;
                 }
                 var opts = {
                     mediaConstraints: {
@@ -190,14 +210,17 @@ var SipCall = (function () {
                 };
                 _this.remoteUri = target;
                 _this.setCallStatus(__1.CALL_STATUS_DIALING);
+                _this._setInputMediaStream(stream);
+                _this._hasLocalVideo = hasVideo;
                 _this._eventEmitter.emit('call.update', { 'call': _this });
                 ua.call(target, opts);
-                _this.setInputMediaStream(stream);
             });
         };
-        this.accept = function (hasAudio, hasVideo) {
+        this.accept = function (hasAudio, hasVideo, localVideoEl, remoteVideoEl) {
             if (hasAudio === void 0) { hasAudio = true; }
-            if (hasVideo === void 0) { hasVideo = true; }
+            if (hasVideo === void 0) { hasVideo = false; }
+            if (localVideoEl === void 0) { localVideoEl = null; }
+            if (remoteVideoEl === void 0) { remoteVideoEl = null; }
             if (!_this.isSessionActive()) {
                 throw new Error("RtcSession is not active");
             }
@@ -205,7 +228,15 @@ var SipCall = (function () {
                 _this._logger.error("Calling answer() is not allowed when call status is " + _this.getCallStatus());
                 return;
             }
+            if (hasVideo) {
+                _this._hasLocalVideo = true;
+                _this._localVideoEl = localVideoEl;
+                _this._remoteVideoEl = remoteVideoEl;
+            }
             _this._mediaEngine.openStreams(hasAudio, hasVideo).then(function (inputStream) {
+                if (hasVideo && localVideoEl) {
+                    localVideoEl.srcObject = inputStream;
+                }
                 var options = {
                     extraHeaders: _this.getExtraHeaders().resp2xx,
                     mediaConstraints: {
@@ -218,7 +249,7 @@ var SipCall = (function () {
                 };
                 _this.getRTCSession().answer(options);
                 _this.setCallStatus(__1.CALL_STATUS_CONNECTING);
-                _this.setInputMediaStream(inputStream);
+                _this._setInputMediaStream(inputStream);
                 _this._mediaEngine.stopTone('ringing');
             });
         };
@@ -257,7 +288,7 @@ var SipCall = (function () {
             var inputStream = _this.getInputMediaStream();
             if (inputStream) {
                 _this._mediaEngine.closeStream(inputStream);
-                _this.setInputMediaStream(null);
+                _this._setInputMediaStream(null);
             }
             if (_this.getCallStatus() === __1.CALL_STATUS_PROGRESS) {
                 _this._mediaEngine.stopTone('ringback');
@@ -525,7 +556,73 @@ var SipCall = (function () {
             _this._transferStatus = __1.TRANSFER_STATUS_FAILED;
         };
         this._handleRemoteTrack = function (track) {
-            _this._mediaEngine.addTrack(_this._outputMediaStream, track);
+            if (_this._outputMediaStream) {
+                _this._mediaEngine.startOrUpdateOutStreams(_this._outputMediaStream, track, null, _this._remoteVideoEl);
+            }
+        };
+        this._handleLocalSdp = function (sdp) {
+            var sdpObj = sdpTransform.parse(sdp);
+            _this._localMedia = [];
+            sdpObj.media.forEach(function (media) {
+                var mode = 'sendrecv';
+                var type = media.type;
+                if (media.direction !== undefined) {
+                    mode = media.direction;
+                }
+                if (type === 'video' && media.port !== 0) {
+                    console.log('Local Video present');
+                }
+                _this._localMedia.push({ mode: mode, type: type, payloads: media.rtp });
+            });
+        };
+        this._handleRemoteOffer = function (sdp) {
+            var sdpObj = sdpTransform.parse(sdp);
+            if (sdpObj.media === undefined || sdpObj.media.length === 0) {
+                _this._logger.debug('SDP Offer received with zero media streams');
+                return;
+            }
+            var sdpAudio = sdpObj.media.find(function (mline) { return mline.type === 'audio'; });
+            var sdpVideo = sdpObj.media.find(function (mline) { return mline.type === 'video'; });
+            if (sdpAudio !== undefined) {
+            }
+            if (sdpVideo !== undefined && sdpVideo.port !== 0) {
+                console.log('Incoming video call');
+                _this._hasRemoteVideo = true;
+            }
+            _this._remoteMedia = [];
+            sdpObj.media.forEach(function (media) {
+                var mode = 'sendrecv';
+                if (media.direction !== undefined) {
+                    mode = media.direction;
+                }
+                _this._remoteMedia.push({ mode: mode, type: media.type, payloads: media.rtp });
+            });
+            _this._sdpStatus = __1.SDP_OFFER_RECEIVED;
+            console.log(_this._remoteMedia);
+        };
+        this._handleRemoteAnswer = function (sdp) {
+            var sdpObj = sdpTransform.parse(sdp);
+            if (sdpObj.media === undefined || sdpObj.media.length === 0) {
+                _this._logger.error('SDP Answer received with zero media streams');
+                return;
+            }
+            var sdpVideo = sdpObj.media.find(function (mline) { return mline.type === 'video'; });
+            if (sdpVideo !== undefined && sdpVideo.port !== 0) {
+                console.log('Incoming video call');
+                _this._hasRemoteVideo = true;
+            }
+            _this._remoteMedia = [];
+            sdpObj.media.forEach(function (media) {
+                var mode = 'sendrecv';
+                if (media.direction !== undefined) {
+                    mode = media.direction;
+                }
+                if (media.port !== 0) {
+                    _this._remoteMedia.push({ mode: mode, type: media.type, payloads: media.rtp });
+                }
+            });
+            _this._sdpStatus = __1.SDP_OFFER_ANSWER_COMPLETE;
+            console.log(_this._remoteMedia);
         };
         this._initSessionEventHandler = function () {
             var rtcSession = _this.getRTCSession();
@@ -588,10 +685,11 @@ var SipCall = (function () {
                 _this._logger.debug('RTCSession "ended" event received', data);
                 if (_this._inputMediaStream) {
                     _this._mediaEngine.closeStream(_this._inputMediaStream);
-                    _this.setInputMediaStream(null);
+                    _this._setInputMediaStream(null);
                 }
                 if (_this._outputMediaStream) {
                     _this._mediaEngine.closeStream(_this._outputMediaStream);
+                    _this._outputMediaStream = null;
                 }
                 if ((rtcSession === null || rtcSession === void 0 ? void 0 : rtcSession.end_time) && rtcSession.end_time !== undefined) {
                     _this.endTime = rtcSession === null || rtcSession === void 0 ? void 0 : rtcSession.end_time.toString();
@@ -614,7 +712,11 @@ var SipCall = (function () {
                 var reason = data.cause;
                 if (_this._inputMediaStream) {
                     _this._mediaEngine.closeStream(_this._inputMediaStream);
-                    _this.setInputMediaStream(null);
+                    _this._setInputMediaStream(null);
+                }
+                if (_this._outputMediaStream) {
+                    _this._mediaEngine.closeStream(_this._outputMediaStream);
+                    _this._outputMediaStream = null;
                 }
                 if (_this.getCallStatus() === __1.CALL_STATUS_RINGING) {
                     _this._mediaEngine.stopTone('ringing');
@@ -719,6 +821,19 @@ var SipCall = (function () {
             });
             rtcSession.on('sdp', function (data) {
                 _this._logger.debug('RTCSession "sdp" event received', data);
+                console.log("ON session SDP event");
+                var originator = data.originator, type = data.type, sdp = data.sdp;
+                if (originator === 'remote') {
+                    if (type === 'answer') {
+                        _this._handleRemoteAnswer(sdp);
+                    }
+                    else if (type === 'offer') {
+                        _this._handleRemoteOffer(sdp);
+                    }
+                }
+                else {
+                    _this._handleLocalSdp(sdp);
+                }
             });
             rtcSession.on('icecandidate', function (data) {
                 _this._logger.debug('RTCSession "icecandidate" event received', data);
@@ -737,6 +852,13 @@ var SipCall = (function () {
         this._id = this._uuid();
         this._isPlaying = false;
         this._transferStatus = __1.TRANSFER_STATUS_NONE;
+        this._hasLocalVideo = false;
+        this._hasRemoteVideo = false;
+        this._localVideoEl = null;
+        this._remoteVideoEl = null;
+        this._sdpStatus = __1.SDP_OFFER_PENDING;
+        this._localMedia = [];
+        this._remoteMedia = [];
         this._init(isIncoming);
     }
     return SipCall;

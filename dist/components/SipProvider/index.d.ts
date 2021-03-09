@@ -89,6 +89,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
         makeCall: PropTypes.Requireable<(...args: any[]) => any>;
         playTone: PropTypes.Requireable<(...args: any[]) => any>;
         stopTone: PropTypes.Requireable<(...args: any[]) => any>;
+        getMediaDevices: PropTypes.Requireable<(...args: any[]) => any>;
     };
     static propTypes: {
         socket: PropTypes.Requireable<string>;
@@ -183,6 +184,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
         makeCall: any;
         playTone: any;
         stopTone: any;
+        getMediaDevices: any;
     };
     _initProperties: () => void;
     _getCallConfig: () => SipCallConfig;
@@ -203,9 +205,10 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     _addToHistory: (call: any) => void;
     registerSip(): void;
     unregisterSip(options?: UnRegisterOptions): void;
-    makeCall: (callee: string, isVideoCall: boolean) => string;
+    makeCall: (callee: string, isVideoCall: boolean, localVideoEl: HTMLMediaElement, remoteVideoEl: HTMLMediaElement) => string;
     playTone: (tone: string) => void;
     stopTone: (tone: string) => void;
+    getMediaDevices: (deviceKind: MediaDeviceKind) => import("../../medialib/mediaengine").MediaDevice[];
     _terminateAll: () => void;
     _reconfigureDebug(): void;
     _reinitializeJsSIP(): Promise<void>;
