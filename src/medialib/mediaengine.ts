@@ -145,7 +145,7 @@ export class MediaEngine {
     this._isCapturing = false;
     this._isPlaying = false;
   };
-  startOrUpdateOutStreams = (mediaStream: MediaStream,
+  startOrUpdateOutStreams = (mediaStream: MediaStream | null,
                              track: MediaStreamTrack,
                              audioElement: HTMLMediaElement | null,
                              videoElement: HTMLMediaElement | null): void => {
@@ -161,7 +161,46 @@ export class MediaEngine {
       }
       this._isPlaying = true;
     }
-    this._addTrack(mediaStream, track, 'out');
+    // if valid add the track
+    if (mediaStream) {
+      const trackExists = mediaStream.getTracks().find((t) => t.id === track.id);
+      if (trackExists) {
+        mediaStream.removeTrack(trackExists);
+      }
+      mediaStream.addTrack(track);
+      let element: HTMLMediaElement | null = null;
+      if (track.kind === 'audio') {
+        if (audioElement) {
+          element = audioElement;
+        } else {
+          element = this._config!.audio.out.element;
+        }
+      } else {
+        if (videoElement) {
+          element = videoElement;
+        } else {
+          element = this._config!.video.out.element;
+        }
+      }
+      if (element) {
+        element.srcObject = mediaStream;
+        /*
+        element.play()
+          .then(() => {
+            // log
+            // tslint:disable-next-line:no-console
+            console.log('Play success');
+          })
+          .catch((err) => {
+            // log
+            // tslint:disable-next-line:no-console
+            console.log('Play failed');
+            // tslint:disable-next-line:no-console
+            console.log(err);
+          })
+         */
+      }
+    }
   }
   muteAudio = (): void => {
     this._enableAudioChannels(false);
@@ -216,39 +255,6 @@ export class MediaEngine {
   };
   changeDevice = async (deviceKind: string, deviceId: string): Promise<any> => {
     // TO DO change out & in device
-  };
-  _addTrack = (mediaStream: MediaStream, track: MediaStreamTrack, direction: string): void => {
-    // check if track is already present or not
-    const trackExists = mediaStream.getTracks().find((t) => t.id === track.id);
-    if (!trackExists) {
-      mediaStream.addTrack(track);
-    }
-    // tslint:disable-next-line:no-console
-    // console.log(track);
-    // @ts-ignore
-    const element = this._config[track.kind][direction].element;
-    if (element) {
-      element.srcObject = mediaStream;
-      element.play()
-        .then(() => {
-          // log
-        })
-        .catch((err) => {
-          // log
-        })
-    }
-    track.addEventListener('unmute', (event) => {
-      // tslint:disable-next-line:no-console
-      console.log('Received track unmute event');
-    });
-    track.addEventListener('mute', (event) => {
-      // tslint:disable-next-line:no-console
-      console.log('Received track mute event');
-    });
-    track.addEventListener('ended', (event) => {
-      // tslint:disable-next-line:no-console
-      console.log('Received track ended event');
-    });
   };
   _prepareConfig(config: MediaEngineConfig | null) {
     if (!config) {

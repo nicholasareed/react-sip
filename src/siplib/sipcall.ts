@@ -51,14 +51,6 @@ export interface DtmfOptions {
   channelType: DTMF_TRANSPORT | undefined;
 }
 
-export interface OutputMediaStream {
-  mediaStream: MediaStream;
-  elements: {
-    audio: HTMLAudioElement;
-    video: HTMLVideoElement;
-  },
-}
-
 export interface PayloadInfo {
   num: number;
   codec: string;
@@ -163,7 +155,7 @@ export class SipCall {
       video: MEDIA_DEVICE_STATUS_ACTIVE,
     };
     this._outputMediaStream = new MediaStream();
-  };
+  }
 
   getId = (): string => {
     return this._id;
@@ -206,9 +198,6 @@ export class SipCall {
     }
     return false;
   };
-  isVideoCall = (): boolean => {
-    return this._hasLocalVideo;
-  }
   hasLocalVideo = (): boolean => {
     return this._hasLocalVideo;
   }
@@ -352,7 +341,11 @@ export class SipCall {
           video: hasVideo,
         },
         mediaStream: stream,
-        rtcOfferConstraints: this.getRTCOfferConstraints(),
+        rtcOfferConstraints: {
+          offerToReceiveAudio: hasAudio,
+          offerToReceiveVideo: hasVideo,
+          iceRestart: false
+        },
         pcConfig: this.getRTCConfig(),
         extraHeaders: this.getExtraHeaders().invite,
         sessionTimersExpires: this.getSessionTimerExpires(),
@@ -453,6 +446,10 @@ export class SipCall {
     if (inputStream) {
       this._mediaEngine.closeStream(inputStream);
       this._setInputMediaStream(null);
+      if (this._localVideoEl) {
+        this._localVideoEl.srcObject = null;
+        this._localVideoEl = null;
+      }
     }
     if (this.getCallStatus() === CALL_STATUS_PROGRESS) {
       this._mediaEngine.stopTone('ringback');
@@ -477,7 +474,6 @@ export class SipCall {
       this._logger.error('DTMF is not allowed while call is on hold');
       return;
     }
-
     const options = {
       duration: this.getDtmfOptions().duration,
       interToneGap: this.getDtmfOptions().interToneGap,
@@ -760,14 +756,12 @@ export class SipCall {
     this._transferStatus = TRANSFER_STATUS_FAILED;
   };
   _handleRemoteTrack = (track: MediaStreamTrack): void => {
-    if (this._outputMediaStream) {
-      this._mediaEngine.startOrUpdateOutStreams(
-        this._outputMediaStream,
-        track,
-        null,
-        this._remoteVideoEl
-      );
-    }
+    this._mediaEngine.startOrUpdateOutStreams(
+      this._outputMediaStream,
+      track,
+      null,
+      this._remoteVideoEl
+    );
   };
   _handleLocalSdp = (sdp: string): void => {
     const sdpObj = sdpTransform.parse(sdp);
@@ -862,12 +856,44 @@ export class SipCall {
 
     if (rtcSession?.connection) {
       const peerConnection = rtcSession.connection;
+      this.setPeerConnection(peerConnection);
+
       peerConnection.addEventListener('track', (event: RTCTrackEvent) => {
         // tslint:disable-next-line:no-console
         console.log('ON track event');
         this._logger.debug('PeerConnection "ontrack" event received');
         this._handleRemoteTrack(event.track);
-      })
+        event.track.addEventListener('unmute', (ev) => {
+          const activeTrack = ev.target as MediaStreamTrack;
+          if (this._outputMediaStream) {
+            this._mediaEngine.startOrUpdateOutStreams(
+              this._outputMediaStream,
+              activeTrack,
+              null,
+              this._remoteVideoEl
+            );
+          }
+        });
+        event.track.addEventListener('mute', (ev) => {
+          const mutedTrack = ev.target as MediaStreamTrack;
+          if (this._outputMediaStream) {
+            this._mediaEngine.startOrUpdateOutStreams(
+              this._outputMediaStream,
+              mutedTrack,
+              null,
+              this._remoteVideoEl
+            );
+          }
+        });
+        event.track.addEventListener('ended', (ev) => {
+          // tslint:disable-next-line:no-console
+          console.log('Received track ended event');
+        });
+      });
+      peerConnection.addEventListener('removestream', (event) => {
+        // tslint:disable-next-line:no-console
+        console.log('Received remove stream event');
+      });
     }
 
     rtcSession!.on('peerconnection', (data) => {
@@ -892,8 +918,6 @@ export class SipCall {
       })
        */
     });
-
-
     // CONNECTING EVENT
     rtcSession!.on('connecting', (data) => {
       // tslint:disable-next-line:no-console
@@ -950,6 +974,15 @@ export class SipCall {
         this._mediaEngine.closeStream(this._outputMediaStream);
         this._outputMediaStream = null;
       }
+      if (this._localVideoEl) {
+        this._localVideoEl.srcObject = null;
+        this._localVideoEl = null;
+      }
+      if (this._remoteVideoEl) {
+        this._remoteVideoEl.srcObject = null;
+        this._remoteVideoEl = null;
+      }
+
       if(rtcSession?.end_time && rtcSession.end_time !== undefined) {
         this.endTime = rtcSession?.end_time.toString();
       }
@@ -976,6 +1009,14 @@ export class SipCall {
       if(this._outputMediaStream) {
         this._mediaEngine.closeStream(this._outputMediaStream);
         this._outputMediaStream = null;
+      }
+      if (this._localVideoEl) {
+        this._localVideoEl.srcObject = null;
+        this._localVideoEl = null;
+      }
+      if (this._remoteVideoEl) {
+        this._remoteVideoEl.srcObject = null;
+        this._remoteVideoEl = null;
       }
       if (this.getCallStatus() === CALL_STATUS_RINGING) {
         this._mediaEngine.stopTone('ringing');
@@ -1087,8 +1128,6 @@ export class SipCall {
       console.log("ON session SDP event");
       const { originator, type, sdp } = data;
       if (originator === 'remote') {
-        // tslint:disable-next-line:no-console
-        // console.log(sdp);
         if (type === 'answer') {
           this._handleRemoteAnswer(sdp);
         } else if (type === 'offer') {
@@ -1096,8 +1135,6 @@ export class SipCall {
         }
       } else {
         // local sdp
-        // tslint:disable-next-line:no-console
-        // console.log(sdp);
         this._handleLocalSdp(sdp);
       }
     });
