@@ -15,13 +15,6 @@ export interface DtmfOptions {
     interToneGap: number;
     channelType: DTMF_TRANSPORT | undefined;
 }
-export interface OutputMediaStream {
-    mediaStream: MediaStream;
-    elements: {
-        audio: HTMLAudioElement;
-        video: HTMLVideoElement;
-    };
-}
 export interface PayloadInfo {
     num: number;
     codec: string;
@@ -82,7 +75,6 @@ export declare class SipCall {
     isEstablished: () => boolean;
     isActive: () => boolean;
     isMediaActive: () => boolean;
-    isVideoCall: () => boolean;
     hasLocalVideo: () => boolean;
     hasRemoteVideo: () => boolean;
     getMediaSessionStatus: () => MediaSessionStatus;
@@ -126,6 +118,7 @@ export declare class SipCall {
     isVideoOnMute: () => boolean;
     blindTransfer: (target: string) => void;
     attendedTransfer: (replaceCall: SipCall) => void;
+    parkCall: (dest: string) => void;
     _onReferSuccess: (data: any) => void;
     _onReferfailed: (data: any) => void;
     _onTransferAcceptNotify: (data: any) => void;

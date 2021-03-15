@@ -148,7 +148,33 @@ var MediaEngine = (function () {
                 }
                 _this._isPlaying = true;
             }
-            _this._addTrack(mediaStream, track, 'out');
+            if (mediaStream) {
+                var trackExists = mediaStream.getTracks().find(function (t) { return t.id === track.id; });
+                if (trackExists) {
+                    mediaStream.removeTrack(trackExists);
+                }
+                mediaStream.addTrack(track);
+                var element = null;
+                if (track.kind === 'audio') {
+                    if (audioElement) {
+                        element = audioElement;
+                    }
+                    else {
+                        element = _this._config.audio.out.element;
+                    }
+                }
+                else {
+                    if (videoElement) {
+                        element = videoElement;
+                    }
+                    else {
+                        element = _this._config.video.out.element;
+                    }
+                }
+                if (element) {
+                    element.srcObject = mediaStream;
+                }
+            }
         };
         this.muteAudio = function () {
             _this._enableAudioChannels(false);
@@ -205,30 +231,6 @@ var MediaEngine = (function () {
                 return [2];
             });
         }); };
-        this._addTrack = function (mediaStream, track, direction) {
-            var trackExists = mediaStream.getTracks().find(function (t) { return t.id === track.id; });
-            if (!trackExists) {
-                mediaStream.addTrack(track);
-            }
-            var element = _this._config[track.kind][direction].element;
-            if (element) {
-                element.srcObject = mediaStream;
-                element.play()
-                    .then(function () {
-                })
-                    .catch(function (err) {
-                });
-            }
-            track.addEventListener('unmute', function (event) {
-                console.log('Received track unmute event');
-            });
-            track.addEventListener('mute', function (event) {
-                console.log('Received track mute event');
-            });
-            track.addEventListener('ended', function (event) {
-                console.log('Received track ended event');
-            });
-        };
         this._startInputStreams = function (mediaStream) {
             var newStream = new MediaStream();
             mediaStream.getTracks().forEach(function (track) {

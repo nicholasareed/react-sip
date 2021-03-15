@@ -68,9 +68,6 @@ var SipCall = (function () {
             }
             return false;
         };
-        this.isVideoCall = function () {
-            return _this._hasLocalVideo;
-        };
         this.hasLocalVideo = function () {
             return _this._hasLocalVideo;
         };
@@ -203,7 +200,11 @@ var SipCall = (function () {
                         video: hasVideo,
                     },
                     mediaStream: stream,
-                    rtcOfferConstraints: _this.getRTCOfferConstraints(),
+                    rtcOfferConstraints: {
+                        offerToReceiveAudio: hasAudio,
+                        offerToReceiveVideo: hasVideo,
+                        iceRestart: false
+                    },
                     pcConfig: _this.getRTCConfig(),
                     extraHeaders: _this.getExtraHeaders().invite,
                     sessionTimersExpires: _this.getSessionTimerExpires(),
@@ -289,6 +290,10 @@ var SipCall = (function () {
             if (inputStream) {
                 _this._mediaEngine.closeStream(inputStream);
                 _this._setInputMediaStream(null);
+                if (_this._localVideoEl) {
+                    _this._localVideoEl.srcObject = null;
+                    _this._localVideoEl = null;
+                }
             }
             if (_this.getCallStatus() === __1.CALL_STATUS_PROGRESS) {
                 _this._mediaEngine.stopTone('ringback');
@@ -539,6 +544,29 @@ var SipCall = (function () {
             (_a = _this.getRTCSession()) === null || _a === void 0 ? void 0 : _a.refer(_this.remoteUri, transferOptions);
             _this._transferStatus = __1.TRANSFER_STATUS_INITIATED;
         };
+        this.parkCall = function (dest) {
+            if (!_this.getRTCSession()) {
+                _this._logger.error('Session is not active, invalid API call');
+                return;
+            }
+            var options = {
+                eventHandlers: {
+                    requestSucceeded: function () {
+                        console.log('ON Park refer success');
+                    },
+                    requestFailed: function () {
+                        console.log('ON Park refer failed');
+                    },
+                    accepted: function () {
+                        console.log('ON Park accept notification');
+                    },
+                    failed: function () {
+                        console.log('ON Park failure notification');
+                    },
+                },
+            };
+            _this.getRTCSession().refer(dest, options);
+        };
         this._onReferSuccess = function (data) {
             console.log('ON Transfer refer success');
             _this._transferStatus = __1.TRANSFER_STATUS_REFER_SUCCESS;
@@ -556,9 +584,7 @@ var SipCall = (function () {
             _this._transferStatus = __1.TRANSFER_STATUS_FAILED;
         };
         this._handleRemoteTrack = function (track) {
-            if (_this._outputMediaStream) {
-                _this._mediaEngine.startOrUpdateOutStreams(_this._outputMediaStream, track, null, _this._remoteVideoEl);
-            }
+            _this._mediaEngine.startOrUpdateOutStreams(_this._outputMediaStream, track, null, _this._remoteVideoEl);
         };
         this._handleLocalSdp = function (sdp) {
             var sdpObj = sdpTransform.parse(sdp);
@@ -631,10 +657,23 @@ var SipCall = (function () {
             }
             if (rtcSession === null || rtcSession === void 0 ? void 0 : rtcSession.connection) {
                 var peerConnection = rtcSession.connection;
+                _this.setPeerConnection(peerConnection);
                 peerConnection.addEventListener('track', function (event) {
                     console.log('ON track event');
                     _this._logger.debug('PeerConnection "ontrack" event received');
                     _this._handleRemoteTrack(event.track);
+                    event.track.addEventListener('unmute', function (ev) {
+                        console.log('Received track unmute event');
+                    });
+                    event.track.addEventListener('mute', function (ev) {
+                        console.log('Received track mute event');
+                    });
+                    event.track.addEventListener('ended', function (ev) {
+                        console.log('Received track ended event');
+                    });
+                });
+                peerConnection.addEventListener('removestream', function (event) {
+                    console.log('Received remove stream event');
                 });
             }
             rtcSession.on('peerconnection', function (data) {
@@ -691,6 +730,14 @@ var SipCall = (function () {
                     _this._mediaEngine.closeStream(_this._outputMediaStream);
                     _this._outputMediaStream = null;
                 }
+                if (_this._localVideoEl) {
+                    _this._localVideoEl.srcObject = null;
+                    _this._localVideoEl = null;
+                }
+                if (_this._remoteVideoEl) {
+                    _this._remoteVideoEl.srcObject = null;
+                    _this._remoteVideoEl = null;
+                }
                 if ((rtcSession === null || rtcSession === void 0 ? void 0 : rtcSession.end_time) && rtcSession.end_time !== undefined) {
                     _this.endTime = rtcSession === null || rtcSession === void 0 ? void 0 : rtcSession.end_time.toString();
                 }
@@ -717,6 +764,14 @@ var SipCall = (function () {
                 if (_this._outputMediaStream) {
                     _this._mediaEngine.closeStream(_this._outputMediaStream);
                     _this._outputMediaStream = null;
+                }
+                if (_this._localVideoEl) {
+                    _this._localVideoEl.srcObject = null;
+                    _this._localVideoEl = null;
+                }
+                if (_this._remoteVideoEl) {
+                    _this._remoteVideoEl.srcObject = null;
+                    _this._remoteVideoEl = null;
                 }
                 if (_this.getCallStatus() === __1.CALL_STATUS_RINGING) {
                     _this._mediaEngine.stopTone('ringing');

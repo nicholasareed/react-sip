@@ -36,14 +36,13 @@ export declare class MediaEngine {
     openStreams: (audio: boolean, video: boolean) => Promise<MediaStream | null>;
     closeStream: (mediaStream: MediaStream) => void;
     closeAll: () => void;
-    startOrUpdateOutStreams: (mediaStream: MediaStream, track: MediaStreamTrack, audioElement: HTMLMediaElement | null, videoElement: HTMLMediaElement | null) => void;
+    startOrUpdateOutStreams: (mediaStream: MediaStream | null, track: MediaStreamTrack, audioElement: HTMLMediaElement | null, videoElement: HTMLMediaElement | null) => void;
     muteAudio: () => void;
     unMuteAudio: () => void;
     playTone: (name: string, volume?: number) => void;
     stopTone: (name: string) => void;
     hasDeviceExists: (deviceKind: string, deviceId: string | null) => boolean;
     changeDevice: (deviceKind: string, deviceId: string) => Promise<any>;
-    _addTrack: (mediaStream: MediaStream, track: MediaStreamTrack, direction: string) => void;
     _prepareConfig(config: MediaEngineConfig | null): void;
     _startInputStreams: (mediaStream: MediaStream) => MediaStream;
     _enableAudioChannels: (isEnable: boolean) => void;
