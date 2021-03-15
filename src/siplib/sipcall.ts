@@ -734,6 +734,38 @@ export class SipCall {
     this.getRTCSession()?.refer(this.remoteUri, transferOptions);
     this._transferStatus = TRANSFER_STATUS_INITIATED;
   };
+  /*
+   * Park call - based on basic blind transfer
+   * 'dest' should contain the 'feature prefix' + 'slot no'
+   */
+  parkCall = (dest: string): void => {
+    if (!this.getRTCSession()) {
+      this._logger.error('Session is not active, invalid API call');
+      return
+    }
+    // park event handlers
+    const options = {
+      eventHandlers: {
+        requestSucceeded: () => {
+          // tslint:disable-next-line:no-console
+          console.log('ON Park refer success');
+        },
+        requestFailed: () => {
+          // tslint:disable-next-line:no-console
+          console.log('ON Park refer failed');
+        },
+        accepted: () => {
+          // tslint:disable-next-line:no-console
+          console.log('ON Park accept notification');
+        },
+        failed: () => {
+          // tslint:disable-next-line:no-console
+          console.log('ON Park failure notification');
+        },
+      },
+    }
+    this.getRTCSession()!.refer(dest, options);
+  };
 
   _onReferSuccess = (data): void => {
     // tslint:disable-next-line:no-console
@@ -863,27 +895,16 @@ export class SipCall {
         console.log('ON track event');
         this._logger.debug('PeerConnection "ontrack" event received');
         this._handleRemoteTrack(event.track);
+
         event.track.addEventListener('unmute', (ev) => {
-          const activeTrack = ev.target as MediaStreamTrack;
-          if (this._outputMediaStream) {
-            this._mediaEngine.startOrUpdateOutStreams(
-              this._outputMediaStream,
-              activeTrack,
-              null,
-              this._remoteVideoEl
-            );
-          }
+          // const activeTrack = ev.target as MediaStreamTrack;
+          // tslint:disable-next-line:no-console
+          console.log('Received track unmute event');
         });
         event.track.addEventListener('mute', (ev) => {
-          const mutedTrack = ev.target as MediaStreamTrack;
-          if (this._outputMediaStream) {
-            this._mediaEngine.startOrUpdateOutStreams(
-              this._outputMediaStream,
-              mutedTrack,
-              null,
-              this._remoteVideoEl
-            );
-          }
+          // const mutedTrack = ev.target as MediaStreamTrack;
+          // tslint:disable-next-line:no-console
+          console.log('Received track mute event');
         });
         event.track.addEventListener('ended', (ev) => {
           // tslint:disable-next-line:no-console
@@ -1127,13 +1148,19 @@ export class SipCall {
       // tslint:disable-next-line:no-console
       console.log("ON session SDP event");
       const { originator, type, sdp } = data;
+      // tslint:disable-next-line:no-console
+      // console.log(originator);
       if (originator === 'remote') {
+        // tslint:disable-next-line:no-console
+        // console.log(sdp);
         if (type === 'answer') {
           this._handleRemoteAnswer(sdp);
         } else if (type === 'offer') {
           this._handleRemoteOffer(sdp);
         }
       } else {
+        // tslint:disable-next-line:no-console
+        // console.log(sdp);
         // local sdp
         this._handleLocalSdp(sdp);
       }
