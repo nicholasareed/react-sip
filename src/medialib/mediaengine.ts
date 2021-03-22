@@ -37,12 +37,10 @@ export class MediaEngine {
   _config: MediaEngineConfig | null;
   _availableDevices: MediaDeviceInfo[];
   _openedStreams: MediaStream[];
-  _isCapturing: boolean;
   _isPlaying: boolean;
   _supportedDeviceTypes: string[];
 
   constructor(config: MediaEngineConfig | null) {
-    this._isCapturing = false;
     this._isPlaying = false;
     this._availableDevices = [];
     this._openedStreams = [];
@@ -78,50 +76,49 @@ export class MediaEngine {
     const opts = this._getMediaConstraints(audio, video);
 
     // If already capturing
-    if (this._isCapturing) {
-      return navigator.mediaDevices.getUserMedia(opts).then((mediaStream) => {
-        return this._startInputStreams(mediaStream);
-      }).catch((err) => {
-        // log the error
-        return null;
-      });
-    } else {
-      this._isCapturing = true;
-      return navigator.mediaDevices.getUserMedia(opts).then((mediaStream) => {
-        mediaStream.getTracks().forEach((track) => {
-          // if already live
-          if (track.readyState === 'live') {
-            delete opts[track.kind];
-          } else {
-            mediaStream.removeTrack(track);
-          }
-        });
-        if (Object.keys(opts).length === 0) {
-          return Promise.resolve(mediaStream);
+    return navigator.mediaDevices.getUserMedia(opts).then((mediaStream) => {
+      const newStream = new MediaStream();
+      mediaStream.getTracks().forEach((track) => {
+        newStream.addTrack(track);
+        /*
+        // if already live
+        if (track.readyState === 'live') {
+          delete opts[track.kind];
+        } else {
+          mediaStream.removeTrack(track);
         }
+        */
 
-        return navigator.mediaDevices.getUserMedia(opts).then((unattachedStream) => {
-          unattachedStream.getTracks().forEach((track) => {
-            unattachedStream.addTrack(track);
-          })
-          return unattachedStream;
-        }).then((stream: MediaStream) => {
-          this._attachMediaStream(stream, 'audio', 'in');
-          this._attachMediaStream(stream, 'video', 'in');
-          return stream;
-        })
-      }).then((tobeStarted) => {
-        return this._startInputStreams(tobeStarted);
-      })
+      });
+      this._openedStreams.push(newStream);
+      return Promise.resolve(newStream);
+
+    });
+  };
+  updateStream = (appStream: MediaStream | null,
+                  audio: boolean,
+                  video: boolean): Promise<MediaStream | null> => {
+    if (appStream === null) {
+      appStream = new MediaStream();
     }
+    const opts = this._getMediaConstraints(audio, video);
+    return navigator.mediaDevices.getUserMedia(opts).then((mediaStream) => {
+      mediaStream.getTracks().forEach((track) => {
+        const exists = appStream!.getTracks().find((t) => t.kind === track.kind);
+        if (exists !== undefined) {
+          appStream!.removeTrack(track);
+        }
+        appStream!.addTrack(track);
+      });
+      return Promise.resolve(appStream);
+    });
   };
   closeStream = (mediaStream: MediaStream): void => {
     mediaStream.getTracks().forEach((track) => {
       track.enabled = false;
       track.stop();
+      mediaStream.removeTrack(track);
     })
-    // tslint:disable-next-line:no-console
-    console.log(this._openedStreams);
     const index = this._openedStreams.findIndex((item) => item.id === mediaStream.id);
     if (index !== -1) {
       this._openedStreams.splice(index, 1);
@@ -142,7 +139,6 @@ export class MediaEngine {
         mediaStream.removeTrack(track);
       });
     });
-    this._isCapturing = false;
     this._isPlaying = false;
   };
   startOrUpdateOutStreams = (mediaStream: MediaStream | null,
