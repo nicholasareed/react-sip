@@ -37,6 +37,10 @@ export class MediaEngine {
   _config: MediaEngineConfig | null;
   _availableDevices: MediaDeviceInfo[];
   _openedStreams: MediaStream[];
+  _inputVolume: number;
+  _outputVolume: number;
+  _audioContext: AudioContext;
+  _gainNode: GainNode;
   _isPlaying: boolean;
   _supportedDeviceTypes: string[];
 
@@ -45,6 +49,8 @@ export class MediaEngine {
     this._availableDevices = [];
     this._openedStreams = [];
     this._supportedDeviceTypes = ['audioinput', 'audiooutput', 'videoinput'];
+    this._inputVolume = 1;
+    this._outputVolume = 1;
     this._prepareConfig(config);
     this._initDevices();
   }
@@ -93,7 +99,15 @@ export class MediaEngine {
       this._openedStreams.push(newStream);
       return Promise.resolve(newStream);
 
-    });
+    }).then((stream) => {
+      const audioSource = this._audioContext.createMediaStreamSource(stream);
+      const audioDest = this._audioContext.createMediaStreamDestination();
+      audioSource.connect(this._gainNode);
+      this._gainNode.connect(audioDest);
+      this._gainNode.gain.value = 1;
+      const inputStream = audioDest.stream;
+      return Promise.resolve(inputStream);
+    })
   };
   updateStream = (appStream: MediaStream | null,
                   audio: boolean,
@@ -230,6 +244,33 @@ export class MediaEngine {
     }
     toneRes.audio.pause();
     toneRes.audio.currentTime = 0.0;
+  };
+  // change output volume
+  changeOutputVolume = (vol: number): void => {
+    if (vol > 1) {
+      vol = 1;
+    }
+    const value = vol;
+    if (this._isPlaying) {
+      const audioElement = this._config?.audio.out.element;
+      audioElement!.volume = value;
+    }
+    this._outputVolume = value;
+  };
+  // change input volume
+  changeInputVolume = (vol: number): void => {
+    if (vol>1) {
+      vol = 1;
+    }
+    const value = vol * 2;
+    this._gainNode.gain.value = value;
+    this._inputVolume = vol;
+  };
+  getOutputVolume = (): number => {
+    return this._outputVolume;
+  };
+  getInputVolume = (): number => {
+    return this._inputVolume;
   };
   hasDeviceExists = (deviceKind: string, deviceId: string | null): boolean => {
     const isValid = this._supportedDeviceTypes.includes(deviceKind);
@@ -384,6 +425,9 @@ export class MediaEngine {
       })
   };
   _initDevices = (): void => {
+    this._audioContext = new AudioContext();
+    this._gainNode = this._audioContext.createGain(); // per input stream ??
+
     this._refreshDevices();
     navigator.mediaDevices.ondevicechange = (event) => {
       // tslint:disable-next-line:no-console
