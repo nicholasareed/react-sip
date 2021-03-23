@@ -105,6 +105,7 @@ export declare class SipCall {
     toggleHold: () => void;
     isOnLocalHold: () => boolean;
     isOnRemoteHold: () => boolean;
+    offerVideo: (localVideoEl: HTMLMediaElement | null) => void;
     renegotiate: () => boolean;
     _mute: (isAudio?: boolean) => void;
     _unmute: (isAudio?: boolean) => void;

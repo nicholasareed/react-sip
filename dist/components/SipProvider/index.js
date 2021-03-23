@@ -217,6 +217,18 @@ var SipProvider = (function (_super) {
         _this.stopTone = function (tone) {
             _this._mediaEngine.stopTone(tone);
         };
+        _this.setSpeakerVolume = function (vol) {
+            _this._mediaEngine.changeOutputVolume(vol);
+        };
+        _this.setMicVolume = function (vol) {
+            _this._mediaEngine.changeInputVolume(vol);
+        };
+        _this.getSpeakerVolume = function () {
+            return _this._mediaEngine.getOutputVolume();
+        };
+        _this.getMicVolume = function () {
+            return _this._mediaEngine.getInputVolume();
+        };
         _this.getMediaDevices = function (deviceKind) {
             return _this._mediaEngine.availableDevices(deviceKind);
         };
@@ -252,6 +264,10 @@ var SipProvider = (function (_super) {
             makeCall: this.makeCall.bind(this),
             playTone: this.playTone.bind(this),
             stopTone: this.stopTone.bind(this),
+            setSpeakerVolume: this.setSpeakerVolume.bind(this),
+            setMicVolume: this.setMicVolume.bind(this),
+            getSpeakerVolume: this.getSpeakerVolume.bind(this),
+            getMicVolume: this.getMicVolume.bind(this),
             getMediaDevices: this.getMediaDevices.bind(this)
         };
     };
@@ -512,6 +528,11 @@ var SipProvider = (function (_super) {
         playTone: PropTypes.func,
         stopTone: PropTypes.func,
         getMediaDevices: PropTypes.func,
+        setSpeakerVolume: PropTypes.func,
+        setMicVolume: PropTypes.func,
+        getSpeakerVolume: PropTypes.func,
+        getMicVolume: PropTypes.func,
+        setRingVolume: PropTypes.func,
     };
     SipProvider.propTypes = {
         socket: PropTypes.string,

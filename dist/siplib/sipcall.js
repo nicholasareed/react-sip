@@ -201,8 +201,8 @@ var SipCall = (function () {
                     },
                     mediaStream: stream,
                     rtcOfferConstraints: {
-                        offerToReceiveAudio: hasAudio,
-                        offerToReceiveVideo: hasVideo,
+                        offerToReceiveAudio: true,
+                        offerToReceiveVideo: true,
                         iceRestart: false
                     },
                     pcConfig: _this.getRTCConfig(),
@@ -231,21 +231,22 @@ var SipCall = (function () {
             }
             if (hasVideo) {
                 _this._hasLocalVideo = true;
-                _this._localVideoEl = localVideoEl;
-                _this._remoteVideoEl = remoteVideoEl;
             }
+            _this._localVideoEl = localVideoEl;
+            _this._remoteVideoEl = remoteVideoEl;
             _this._mediaEngine.openStreams(hasAudio, hasVideo).then(function (inputStream) {
                 if (hasVideo && localVideoEl) {
                     localVideoEl.srcObject = inputStream;
                 }
+                var stream = inputStream;
                 var options = {
                     extraHeaders: _this.getExtraHeaders().resp2xx,
                     mediaConstraints: {
-                        audio: hasAudio,
-                        video: hasVideo,
+                        audio: true,
+                        video: true,
                     },
                     pcConfig: _this.getRTCConfig(),
-                    inputStream: inputStream,
+                    mediaStream: stream,
                     sessionTimerExpires: _this.getSessionTimerExpires(),
                 };
                 _this.getRTCSession().answer(options);
@@ -405,12 +406,52 @@ var SipCall = (function () {
             }
             return false;
         };
+        this.offerVideo = function (localVideoEl) {
+            if (!_this.isSessionActive()) {
+                throw new Error('RtcSession is not active');
+            }
+            if (_this.getCallStatus() !== __1.CALL_STATUS_ACTIVE) {
+                throw new Error("Calling offerVideo() is not allowed when call status is " + _this.getCallStatus());
+            }
+            if (localVideoEl) {
+                _this._localVideoEl = localVideoEl;
+            }
+            var peerConnection = _this._peerConnection;
+            var transceivers = peerConnection === null || peerConnection === void 0 ? void 0 : peerConnection.getTransceivers();
+            if (transceivers === undefined || transceivers.length < 2) {
+                _this._logger.error('Video transceiver not present');
+                return;
+            }
+            var videoTransceiver = transceivers[1];
+            videoTransceiver === null || videoTransceiver === void 0 ? void 0 : videoTransceiver.direction = 'sendrecv';
+            _this._mediaEngine.updateStream(_this._inputMediaStream, true, true).then(function (stream) {
+                if (!stream) {
+                    throw Error('Failed to update the input streams in offerVideo');
+                }
+                if (_this._localVideoEl) {
+                    _this._localVideoEl.srcObject = stream;
+                }
+                var options = {
+                    useUpdate: false,
+                    rtcOfferConstraints: {
+                        offerToReceiveAudio: true,
+                        offerToReceiveVideo: true,
+                        iceRestart: false
+                    },
+                    extraHeaders: _this.getExtraHeaders().invite
+                };
+                _this._setInputMediaStream(stream);
+                _this._hasLocalVideo = true;
+                _this._eventEmitter.emit('call.update', { 'call': _this });
+                _this.getRTCSession().renegotiate(options);
+            });
+        };
         this.renegotiate = function () {
             if (!_this.isSessionActive()) {
                 throw new Error('RtcSession is not active');
             }
             if (_this.getCallStatus() !== __1.CALL_STATUS_ACTIVE) {
-                throw new Error("Calling reject() is not allowed when call status is " + _this.getCallStatus());
+                throw new Error("Calling renegotiate() is not allowed when call status is " + _this.getCallStatus());
             }
             var options = {
                 useUpdate: false,

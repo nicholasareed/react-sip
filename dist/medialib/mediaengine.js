@@ -69,50 +69,46 @@ var MediaEngine = (function () {
             return __generator(this, function (_a) {
                 console.log(this._availableDevices);
                 opts = this._getMediaConstraints(audio, video);
-                if (this._isCapturing) {
-                    return [2, navigator.mediaDevices.getUserMedia(opts).then(function (mediaStream) {
-                            return _this._startInputStreams(mediaStream);
-                        }).catch(function (err) {
-                            return null;
-                        })];
-                }
-                else {
-                    this._isCapturing = true;
-                    return [2, navigator.mediaDevices.getUserMedia(opts).then(function (mediaStream) {
-                            mediaStream.getTracks().forEach(function (track) {
-                                if (track.readyState === 'live') {
-                                    delete opts[track.kind];
-                                }
-                                else {
-                                    mediaStream.removeTrack(track);
-                                }
-                            });
-                            if (Object.keys(opts).length === 0) {
-                                return Promise.resolve(mediaStream);
-                            }
-                            return navigator.mediaDevices.getUserMedia(opts).then(function (unattachedStream) {
-                                unattachedStream.getTracks().forEach(function (track) {
-                                    unattachedStream.addTrack(track);
-                                });
-                                return unattachedStream;
-                            }).then(function (stream) {
-                                _this._attachMediaStream(stream, 'audio', 'in');
-                                _this._attachMediaStream(stream, 'video', 'in');
-                                return stream;
-                            });
-                        }).then(function (tobeStarted) {
-                            return _this._startInputStreams(tobeStarted);
-                        })];
-                }
-                return [2];
+                return [2, navigator.mediaDevices.getUserMedia(opts).then(function (mediaStream) {
+                        var newStream = new MediaStream();
+                        mediaStream.getTracks().forEach(function (track) {
+                            newStream.addTrack(track);
+                        });
+                        _this._openedStreams.push(newStream);
+                        return Promise.resolve(newStream);
+                    }).then(function (stream) {
+                        var audioSource = _this._audioContext.createMediaStreamSource(stream);
+                        var audioDest = _this._audioContext.createMediaStreamDestination();
+                        audioSource.connect(_this._gainNode);
+                        _this._gainNode.connect(audioDest);
+                        _this._gainNode.gain.value = 1;
+                        var inputStream = audioDest.stream;
+                        return Promise.resolve(inputStream);
+                    })];
             });
         }); };
+        this.updateStream = function (appStream, audio, video) {
+            if (appStream === null) {
+                appStream = new MediaStream();
+            }
+            var opts = _this._getMediaConstraints(audio, video);
+            return navigator.mediaDevices.getUserMedia(opts).then(function (mediaStream) {
+                mediaStream.getTracks().forEach(function (track) {
+                    var exists = appStream.getTracks().find(function (t) { return t.kind === track.kind; });
+                    if (exists !== undefined) {
+                        appStream.removeTrack(track);
+                    }
+                    appStream.addTrack(track);
+                });
+                return Promise.resolve(appStream);
+            });
+        };
         this.closeStream = function (mediaStream) {
             mediaStream.getTracks().forEach(function (track) {
                 track.enabled = false;
                 track.stop();
+                mediaStream.removeTrack(track);
             });
-            console.log(_this._openedStreams);
             var index = _this._openedStreams.findIndex(function (item) { return item.id === mediaStream.id; });
             if (index !== -1) {
                 _this._openedStreams.splice(index, 1);
@@ -132,7 +128,6 @@ var MediaEngine = (function () {
                     mediaStream.removeTrack(track);
                 });
             });
-            _this._isCapturing = false;
             _this._isPlaying = false;
         };
         this.startOrUpdateOutStreams = function (mediaStream, track, audioElement, videoElement) {
@@ -206,6 +201,32 @@ var MediaEngine = (function () {
             }
             toneRes.audio.pause();
             toneRes.audio.currentTime = 0.0;
+        };
+        this.changeOutputVolume = function (vol) {
+            var _a;
+            if (vol > 1) {
+                vol = 1;
+            }
+            var value = vol;
+            if (_this._isPlaying) {
+                var audioElement = (_a = _this._config) === null || _a === void 0 ? void 0 : _a.audio.out.element;
+                audioElement.volume = value;
+            }
+            _this._outputVolume = value;
+        };
+        this.changeInputVolume = function (vol) {
+            if (vol > 1) {
+                vol = 1;
+            }
+            var value = vol * 2;
+            _this._gainNode.gain.value = value;
+            _this._inputVolume = vol;
+        };
+        this.getOutputVolume = function () {
+            return _this._outputVolume;
+        };
+        this.getInputVolume = function () {
+            return _this._inputVolume;
         };
         this.hasDeviceExists = function (deviceKind, deviceId) {
             var isValid = _this._supportedDeviceTypes.includes(deviceKind);
@@ -292,6 +313,8 @@ var MediaEngine = (function () {
             });
         };
         this._initDevices = function () {
+            _this._audioContext = new AudioContext();
+            _this._gainNode = _this._audioContext.createGain();
             _this._refreshDevices();
             navigator.mediaDevices.ondevicechange = function (event) {
                 console.log("On media device change");
@@ -332,11 +355,12 @@ var MediaEngine = (function () {
                 element.srcObject = mediaStream;
             }
         };
-        this._isCapturing = false;
         this._isPlaying = false;
         this._availableDevices = [];
         this._openedStreams = [];
         this._supportedDeviceTypes = ['audioinput', 'audiooutput', 'videoinput'];
+        this._inputVolume = 1;
+        this._outputVolume = 1;
         this._prepareConfig(config);
         this._initDevices();
     }
