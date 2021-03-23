@@ -37,16 +37,20 @@ export class MediaEngine {
   _config: MediaEngineConfig | null;
   _availableDevices: MediaDeviceInfo[];
   _openedStreams: MediaStream[];
-  _isCapturing: boolean;
+  _inputVolume: number;
+  _outputVolume: number;
+  _audioContext: AudioContext;
+  _gainNode: GainNode;
   _isPlaying: boolean;
   _supportedDeviceTypes: string[];
 
   constructor(config: MediaEngineConfig | null) {
-    this._isCapturing = false;
     this._isPlaying = false;
     this._availableDevices = [];
     this._openedStreams = [];
     this._supportedDeviceTypes = ['audioinput', 'audiooutput', 'videoinput'];
+    this._inputVolume = 1;
+    this._outputVolume = 1;
     this._prepareConfig(config);
     this._initDevices();
   }
@@ -78,50 +82,57 @@ export class MediaEngine {
     const opts = this._getMediaConstraints(audio, video);
 
     // If already capturing
-    if (this._isCapturing) {
-      return navigator.mediaDevices.getUserMedia(opts).then((mediaStream) => {
-        return this._startInputStreams(mediaStream);
-      }).catch((err) => {
-        // log the error
-        return null;
-      });
-    } else {
-      this._isCapturing = true;
-      return navigator.mediaDevices.getUserMedia(opts).then((mediaStream) => {
-        mediaStream.getTracks().forEach((track) => {
-          // if already live
-          if (track.readyState === 'live') {
-            delete opts[track.kind];
-          } else {
-            mediaStream.removeTrack(track);
-          }
-        });
-        if (Object.keys(opts).length === 0) {
-          return Promise.resolve(mediaStream);
+    return navigator.mediaDevices.getUserMedia(opts).then((mediaStream) => {
+      const newStream = new MediaStream();
+      mediaStream.getTracks().forEach((track) => {
+        newStream.addTrack(track);
+        /*
+        // if already live
+        if (track.readyState === 'live') {
+          delete opts[track.kind];
+        } else {
+          mediaStream.removeTrack(track);
         }
+        */
 
-        return navigator.mediaDevices.getUserMedia(opts).then((unattachedStream) => {
-          unattachedStream.getTracks().forEach((track) => {
-            unattachedStream.addTrack(track);
-          })
-          return unattachedStream;
-        }).then((stream: MediaStream) => {
-          this._attachMediaStream(stream, 'audio', 'in');
-          this._attachMediaStream(stream, 'video', 'in');
-          return stream;
-        })
-      }).then((tobeStarted) => {
-        return this._startInputStreams(tobeStarted);
-      })
+      });
+      this._openedStreams.push(newStream);
+      return Promise.resolve(newStream);
+
+    }).then((stream) => {
+      const audioSource = this._audioContext.createMediaStreamSource(stream);
+      const audioDest = this._audioContext.createMediaStreamDestination();
+      audioSource.connect(this._gainNode);
+      this._gainNode.connect(audioDest);
+      this._gainNode.gain.value = 1;
+      const inputStream = audioDest.stream;
+      return Promise.resolve(inputStream);
+    })
+  };
+  updateStream = (appStream: MediaStream | null,
+                  audio: boolean,
+                  video: boolean): Promise<MediaStream | null> => {
+    if (appStream === null) {
+      appStream = new MediaStream();
     }
+    const opts = this._getMediaConstraints(audio, video);
+    return navigator.mediaDevices.getUserMedia(opts).then((mediaStream) => {
+      mediaStream.getTracks().forEach((track) => {
+        const exists = appStream!.getTracks().find((t) => t.kind === track.kind);
+        if (exists !== undefined) {
+          appStream!.removeTrack(track);
+        }
+        appStream!.addTrack(track);
+      });
+      return Promise.resolve(appStream);
+    });
   };
   closeStream = (mediaStream: MediaStream): void => {
     mediaStream.getTracks().forEach((track) => {
       track.enabled = false;
       track.stop();
+      mediaStream.removeTrack(track);
     })
-    // tslint:disable-next-line:no-console
-    console.log(this._openedStreams);
     const index = this._openedStreams.findIndex((item) => item.id === mediaStream.id);
     if (index !== -1) {
       this._openedStreams.splice(index, 1);
@@ -142,7 +153,6 @@ export class MediaEngine {
         mediaStream.removeTrack(track);
       });
     });
-    this._isCapturing = false;
     this._isPlaying = false;
   };
   startOrUpdateOutStreams = (mediaStream: MediaStream | null,
@@ -234,6 +244,33 @@ export class MediaEngine {
     }
     toneRes.audio.pause();
     toneRes.audio.currentTime = 0.0;
+  };
+  // change output volume
+  changeOutputVolume = (vol: number): void => {
+    if (vol > 1) {
+      vol = 1;
+    }
+    const value = vol;
+    if (this._isPlaying) {
+      const audioElement = this._config?.audio.out.element;
+      audioElement!.volume = value;
+    }
+    this._outputVolume = value;
+  };
+  // change input volume
+  changeInputVolume = (vol: number): void => {
+    if (vol>1) {
+      vol = 1;
+    }
+    const value = vol * 2;
+    this._gainNode.gain.value = value;
+    this._inputVolume = vol;
+  };
+  getOutputVolume = (): number => {
+    return this._outputVolume;
+  };
+  getInputVolume = (): number => {
+    return this._inputVolume;
   };
   hasDeviceExists = (deviceKind: string, deviceId: string | null): boolean => {
     const isValid = this._supportedDeviceTypes.includes(deviceKind);
@@ -388,6 +425,9 @@ export class MediaEngine {
       })
   };
   _initDevices = (): void => {
+    this._audioContext = new AudioContext();
+    this._gainNode = this._audioContext.createGain(); // per input stream ??
+
     this._refreshDevices();
     navigator.mediaDevices.ondevicechange = (event) => {
       // tslint:disable-next-line:no-console

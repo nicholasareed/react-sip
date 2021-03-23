@@ -86,6 +86,11 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     playTone: PropTypes.func,
     stopTone: PropTypes.func,
     getMediaDevices: PropTypes.func,
+    setSpeakerVolume: PropTypes.func,
+    setMicVolume: PropTypes.func,
+    getSpeakerVolume: PropTypes.func,
+    getMicVolume: PropTypes.func,
+    setRingVolume: PropTypes.func,
   };
 
   static propTypes = {
@@ -183,6 +188,10 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       makeCall: this.makeCall.bind(this),
       playTone: this.playTone.bind(this),
       stopTone: this.stopTone.bind(this),
+      setSpeakerVolume: this.setSpeakerVolume.bind(this),
+      setMicVolume: this.setMicVolume.bind(this),
+      getSpeakerVolume: this.getSpeakerVolume.bind(this),
+      getMicVolume: this.getMicVolume.bind(this),
       getMediaDevices: this.getMediaDevices.bind(this)
     };
   }
@@ -425,6 +434,18 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
   };
   stopTone = (tone: string) => {
     this._mediaEngine.stopTone(tone);
+  };
+  setSpeakerVolume = (vol: number) => {
+    this._mediaEngine.changeOutputVolume(vol);
+  };
+  setMicVolume = (vol: number) => {
+    this._mediaEngine.changeInputVolume(vol);
+  };
+  getSpeakerVolume = () => {
+    return this._mediaEngine.getOutputVolume();
+  };
+  getMicVolume = () => {
+    return this._mediaEngine.getInputVolume();
   };
   // available devices
   getMediaDevices = (deviceKind: MediaDeviceKind) => {

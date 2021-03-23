@@ -342,8 +342,8 @@ export class SipCall {
         },
         mediaStream: stream,
         rtcOfferConstraints: {
-          offerToReceiveAudio: hasAudio,
-          offerToReceiveVideo: hasVideo,
+          offerToReceiveAudio: true,
+          offerToReceiveVideo: true,
           iceRestart: false
         },
         pcConfig: this.getRTCConfig(),
@@ -375,23 +375,26 @@ export class SipCall {
     }
     if (hasVideo) {
       this._hasLocalVideo = true;
-      this._localVideoEl = localVideoEl;
-      this._remoteVideoEl = remoteVideoEl;
     }
+    this._localVideoEl = localVideoEl;
+    this._remoteVideoEl = remoteVideoEl;
+
     this._mediaEngine.openStreams(hasAudio, hasVideo).then((inputStream) => {
       // attach input stream to HTML media elements
       if (hasVideo && localVideoEl) {
         localVideoEl.srcObject = inputStream;
       }
+      // @ts-ignore
+      const stream: MediaStream = inputStream;
       const options = {
         // if extra headers are required for a provider then enable it using config
         extraHeaders: this.getExtraHeaders().resp2xx,
         mediaConstraints: {
-          audio: hasAudio,
-          video: hasVideo,
+          audio: true,
+          video: true,
         },
         pcConfig: this.getRTCConfig(),
-        inputStream,
+        mediaStream: stream,
         sessionTimerExpires: this.getSessionTimerExpires(),
       };
       // JsSIP answer
@@ -580,13 +583,58 @@ export class SipCall {
     return false;
   };
 
+  offerVideo = (localVideoEl: HTMLMediaElement | null): void => {
+    if (!this.isSessionActive()) {
+      throw new Error('RtcSession is not active');
+    }
+    if (this.getCallStatus() !== CALL_STATUS_ACTIVE) {
+      throw new Error(
+        `Calling offerVideo() is not allowed when call status is ${this.getCallStatus()}`,
+      );
+    }
+    if (localVideoEl) {
+      this._localVideoEl = localVideoEl;
+    }
+    const peerConnection = this._peerConnection;
+    const transceivers = peerConnection?.getTransceivers();
+    // audio and video
+    if (transceivers === undefined || transceivers.length < 2) {
+      this._logger.error('Video transceiver not present');
+      return;
+    }
+    const videoTransceiver = transceivers[1];
+    // @ts-ignore
+    videoTransceiver?.direction = 'sendrecv';
+
+    this._mediaEngine.updateStream(this._inputMediaStream, true, true).then((stream) => {
+      if (!stream) {
+        throw Error('Failed to update the input streams in offerVideo');
+      }
+      if (this._localVideoEl) {
+        this._localVideoEl.srcObject = stream;
+      }
+      const options = {
+        useUpdate: false,
+        rtcOfferConstraints: {
+          offerToReceiveAudio: true,
+          offerToReceiveVideo: true,
+          iceRestart: false
+        },
+        extraHeaders: this.getExtraHeaders().invite
+      };
+      this._setInputMediaStream(stream);
+      this._hasLocalVideo = true;
+      this._eventEmitter.emit('call.update', {'call': this});
+      this.getRTCSession()!.renegotiate(options);
+    });
+  }
   renegotiate = (): boolean => {
     if (!this.isSessionActive()) {
       throw new Error('RtcSession is not active');
     }
     if (this.getCallStatus() !== CALL_STATUS_ACTIVE) {
       throw new Error(
-        `Calling reject() is not allowed when call status is ${this.getCallStatus()}`,
+        `Calling renegotiate() is not allowed when call status is ${this.getCallStatus()}`,
       );
     }
     const options = {
@@ -595,7 +643,6 @@ export class SipCall {
     };
     return this.getRTCSession()!.renegotiate(options);
   };
-
   _mute = (isAudio: boolean=true): void => {
     if (!this.isSessionActive()) {
       this._logger.error('RTCSession is not active');
@@ -619,7 +666,6 @@ export class SipCall {
     };
     this.getRTCSession()!.mute(options);
   };
-
   _unmute = (isAudio: boolean=true): void => {
     if (!this.getRTCSession()) {
       this._logger.error('RTCSession is not active');
@@ -766,7 +812,6 @@ export class SipCall {
     }
     this.getRTCSession()!.refer(dest, options);
   };
-
   _onReferSuccess = (data): void => {
     // tslint:disable-next-line:no-console
     console.log('ON Transfer refer success');
