@@ -33,14 +33,20 @@ export interface MediaDevice {
   deviceId: string,
   label: string,
 }
+export interface AudioStreamContext {
+  id: string,
+  rawStream: MediaStream, // feed to source audio node
+  srcNode: AudioNode,
+  destNode: AudioNode,
+  gainNode: GainNode
+}
 export class MediaEngine {
   _config: MediaEngineConfig | null;
   _availableDevices: MediaDeviceInfo[];
   _openedStreams: MediaStream[];
-  _inputVolume: number;
   _outputVolume: number;
   _audioContext: AudioContext;
-  _gainNode: GainNode;
+  _streamContexts: AudioStreamContext[];
   _isPlaying: boolean;
   _supportedDeviceTypes: string[];
 
@@ -48,8 +54,8 @@ export class MediaEngine {
     this._isPlaying = false;
     this._availableDevices = [];
     this._openedStreams = [];
+    this._streamContexts = [];
     this._supportedDeviceTypes = ['audioinput', 'audiooutput', 'videoinput'];
-    this._inputVolume = 1;
     this._outputVolume = 1;
     this._prepareConfig(config);
     this._initDevices();
@@ -73,7 +79,6 @@ export class MediaEngine {
   reConfigure = (config: MediaEngineConfig): void => {
     this._prepareConfig(config);
   };
-
   // Open
   openStreams = async (audio: boolean,
                        video: boolean): Promise<MediaStream | null> => {
@@ -83,8 +88,16 @@ export class MediaEngine {
 
     // If already capturing
     return navigator.mediaDevices.getUserMedia(opts).then((mediaStream) => {
+      const audioSource = this._audioContext.createMediaStreamSource(mediaStream);
+      const audioDest = this._audioContext.createMediaStreamDestination();
+      const gainNode = this._audioContext.createGain(); // per input stream ??
+      audioSource.connect(gainNode);
+      gainNode.connect(audioDest);
+      gainNode.gain.value = 0.8 * 2;  // 80%
+      const inputStream = audioDest.stream;
+      // clone the tracks to another stream
       const newStream = new MediaStream();
-      mediaStream.getTracks().forEach((track) => {
+      inputStream.getTracks().forEach((track) => {
         newStream.addTrack(track);
         /*
         // if already live
@@ -94,21 +107,27 @@ export class MediaEngine {
           mediaStream.removeTrack(track);
         }
         */
-
       });
-      this._openedStreams.push(newStream);
-      return Promise.resolve(newStream);
 
-    }).then((stream) => {
-      const audioSource = this._audioContext.createMediaStreamSource(stream);
-      const audioDest = this._audioContext.createMediaStreamDestination();
-      audioSource.connect(this._gainNode);
-      this._gainNode.connect(audioDest);
-      this._gainNode.gain.value = 1;
-      const inputStream = audioDest.stream;
-      return Promise.resolve(inputStream);
-    })
+      // video call
+      if (video) {
+        mediaStream.getVideoTracks().forEach((track) => {
+          newStream.addTrack(track);
+        });
+      }
+
+      this._openedStreams.push(newStream);
+      this._streamContexts.push({
+        id: newStream.id,
+        rawStream: mediaStream,
+        srcNode: audioSource,
+        destNode: audioDest,
+        gainNode
+      });
+      return Promise.resolve(newStream);
+    });
   };
+
   updateStream = (appStream: MediaStream | null,
                   audio: boolean,
                   video: boolean): Promise<MediaStream | null> => {
@@ -132,7 +151,20 @@ export class MediaEngine {
       track.enabled = false;
       track.stop();
       mediaStream.removeTrack(track);
-    })
+    });
+    const ctxtIndex = this._streamContexts.findIndex(
+      (item) => item.id === mediaStream.id);
+    if (ctxtIndex !== -1) {
+      const streamContext = this._streamContexts[ctxtIndex];
+      streamContext.gainNode.disconnect();
+      streamContext.srcNode.disconnect();
+      streamContext.destNode.disconnect();
+      streamContext.rawStream.getTracks().forEach((track) => {
+        track.enabled = false;
+        track.stop();
+      });
+      this._streamContexts.splice(ctxtIndex, 1);
+    }
     const index = this._openedStreams.findIndex((item) => item.id === mediaStream.id);
     if (index !== -1) {
       this._openedStreams.splice(index, 1);
@@ -145,14 +177,18 @@ export class MediaEngine {
         track.enabled = false;
         track.stop();
       })
-    })
+    });
     this._openedStreams = [];
-    const opts = this._getMediaConstraints(true, true);
-    navigator.mediaDevices.getUserMedia(opts).then((mediaStream) => {
-      mediaStream.getTracks().forEach((track) => {
-        mediaStream.removeTrack(track);
+    this._streamContexts.forEach((streamContext) => {
+      streamContext.gainNode.disconnect();
+      streamContext.srcNode.disconnect();
+      streamContext.destNode.disconnect();
+      streamContext.rawStream.getTracks().forEach((track) => {
+        track.enabled = false;
+        track.stop();
       });
     });
+    this._streamContexts = [];
     this._isPlaying = false;
   };
   startOrUpdateOutStreams = (mediaStream: MediaStream | null,
@@ -258,19 +294,28 @@ export class MediaEngine {
     this._outputVolume = value;
   };
   // change input volume
-  changeInputVolume = (vol: number): void => {
+  changeStreamVolume = (mediaStream: MediaStream, vol: number): void => {
     if (vol>1) {
       vol = 1;
     }
     const value = vol * 2;
-    this._gainNode.gain.value = value;
-    this._inputVolume = vol;
+    const streamContext = this._streamContexts.find(
+      (item) => item.id === mediaStream.id);
+    if (streamContext !== undefined) {
+      streamContext.gainNode.gain.value = value;
+    }
   };
   getOutputVolume = (): number => {
     return this._outputVolume;
   };
-  getInputVolume = (): number => {
-    return this._inputVolume;
+  getStreamVolume = (mediaStream: MediaStream): number => {
+    const streamContext = this._streamContexts.find(
+      (item) => item.id === mediaStream.id);
+    if (streamContext !== undefined) {
+      const value = streamContext.gainNode.gain.value;
+      return (value * 0.5);
+    }
+    return -1;
   };
   hasDeviceExists = (deviceKind: string, deviceId: string | null): boolean => {
     const isValid = this._supportedDeviceTypes.includes(deviceKind);
@@ -426,8 +471,6 @@ export class MediaEngine {
   };
   _initDevices = (): void => {
     this._audioContext = new AudioContext();
-    this._gainNode = this._audioContext.createGain(); // per input stream ??
-
     this._refreshDevices();
     navigator.mediaDevices.ondevicechange = (event) => {
       // tslint:disable-next-line:no-console
