@@ -221,9 +221,6 @@ export class SipCall {
       iceRestart: false,
     }
   };
-  _setInputMediaStream = (stream: MediaStream | null): void => {
-    this._inputMediaStream = stream;
-  };
   getInputMediaStream = (): MediaStream | null => {
     return this._inputMediaStream;
   };
@@ -284,8 +281,6 @@ export class SipCall {
         disp = 'progress';
         break;
       case CALL_STATUS_CONNECTING:
-        disp = 'connecting';
-        break;
       case CALL_STATUS_ACTIVE:
         disp = 'active';
         if (this._mediaSessionStatus === MEDIA_SESSION_STATUS_SENDONLY ||
@@ -297,7 +292,9 @@ export class SipCall {
 
     return disp;
   };
-
+  _setInputMediaStream = (stream: MediaStream | null): void => {
+    this._inputMediaStream = stream;
+  };
   _configureDebug = (): void => {
     if (this._debug) {
       JsSIP.debug.enable(this._debugNamespaces || 'JsSIP:*');
@@ -630,6 +627,12 @@ export class SipCall {
       this.getRTCSession()!.renegotiate(options);
     });
   }
+  changeMicVolume = (vol: number): void => {
+    const mediaStream = this._inputMediaStream;
+    if (mediaStream) {
+      this._mediaEngine.changeStreamVolume(mediaStream, vol);
+    }
+  };
   renegotiate = (): boolean => {
     if (!this.isSessionActive()) {
       throw new Error('RtcSession is not active');
