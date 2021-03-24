@@ -387,7 +387,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     this.ua.unregister(options);
   }
 
-  makeCall = (callee: string, isVideoCall: boolean, localVideoEl: HTMLMediaElement, remoteVideoEl: HTMLMediaElement): string => {
+  makeCall = (callee: string, isVideoCall: boolean, localVideoEl: HTMLMediaElement, remoteVideoEl: HTMLMediaElement, additionalInfo: object): string => {
     if (!callee) {
       throw new Error(`Destination must be defined (${callee} given)`);
     }
@@ -419,6 +419,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       dtmfOptions,
       this._mediaEngine,
       this.eventBus,
+      additionalInfo
     );
     const ua = this._getUA();
 
