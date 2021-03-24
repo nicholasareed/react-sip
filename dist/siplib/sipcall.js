@@ -152,6 +152,8 @@ var SipCall = (function () {
                     disp = 'progress';
                     break;
                 case __1.CALL_STATUS_CONNECTING:
+                    disp = 'connecting';
+                    break;
                 case __1.CALL_STATUS_ACTIVE:
                     disp = 'active';
                     if (_this._mediaSessionStatus === __1.MEDIA_SESSION_STATUS_SENDONLY ||

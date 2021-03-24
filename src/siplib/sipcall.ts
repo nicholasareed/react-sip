@@ -284,6 +284,8 @@ export class SipCall {
         disp = 'progress';
         break;
       case CALL_STATUS_CONNECTING:
+        disp = 'connecting';
+        break;
       case CALL_STATUS_ACTIVE:
         disp = 'active';
         if (this._mediaSessionStatus === MEDIA_SESSION_STATUS_SENDONLY ||
