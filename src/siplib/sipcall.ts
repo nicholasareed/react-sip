@@ -72,6 +72,7 @@ export class SipCall {
   _callConfig: SipCallConfig;
   _rtcConfig: RTCConfiguration;
   _dtmfOptions: DtmfOptions;
+  _additionalInfo: object;
   _mediaSessionStatus: MediaSessionStatus;
   _mediaDeviceStatus: {
     audio: MediaDeviceStatus,
@@ -113,7 +114,8 @@ export class SipCall {
               rtcConfig: RTCConfiguration,
               dtmfOptions: DtmfOptions,
               mediaEngine: MediaEngine,
-              eventEmitter: EventEmitter) {
+              eventEmitter: EventEmitter,
+              additionalInfo: object) {
     this._rtcSession = null;
     this._callConfig = callConfig;
     this._rtcConfig = rtcConfig;
@@ -134,6 +136,7 @@ export class SipCall {
     this._sdpStatus = SDP_OFFER_PENDING;
     this._localMedia = [];
     this._remoteMedia = [];
+    this._additionalInfo = additionalInfo;
     this._init(isIncoming);
   }
 
@@ -159,6 +162,9 @@ export class SipCall {
 
   getId = (): string => {
     return this._id;
+  };
+  getAdditionalInfo = (): object => {
+    return this._additionalInfo;
   };
   getExtraHeaders = (): SipExtraHeaders => {
     return this._callConfig.extraHeaders;
