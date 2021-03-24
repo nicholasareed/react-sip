@@ -23,14 +23,20 @@ export interface MediaDevice {
     deviceId: string;
     label: string;
 }
+export interface AudioStreamContext {
+    id: string;
+    rawStream: MediaStream;
+    srcNode: AudioNode;
+    destNode: AudioNode;
+    gainNode: GainNode;
+}
 export declare class MediaEngine {
     _config: MediaEngineConfig | null;
     _availableDevices: MediaDeviceInfo[];
     _openedStreams: MediaStream[];
-    _inputVolume: number;
     _outputVolume: number;
     _audioContext: AudioContext;
-    _gainNode: GainNode;
+    _streamContexts: AudioStreamContext[];
     _isPlaying: boolean;
     _supportedDeviceTypes: string[];
     constructor(config: MediaEngineConfig | null);
@@ -46,9 +52,9 @@ export declare class MediaEngine {
     playTone: (name: string, volume?: number) => void;
     stopTone: (name: string) => void;
     changeOutputVolume: (vol: number) => void;
-    changeInputVolume: (vol: number) => void;
+    changeStreamVolume: (mediaStream: MediaStream, vol: number) => void;
     getOutputVolume: () => number;
-    getInputVolume: () => number;
+    getStreamVolume: (mediaStream: MediaStream) => number;
     hasDeviceExists: (deviceKind: string, deviceId: string | null) => boolean;
     changeDevice: (deviceKind: string, deviceId: string) => Promise<any>;
     _prepareConfig(config: MediaEngineConfig | null): void;

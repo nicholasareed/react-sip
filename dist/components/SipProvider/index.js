@@ -184,7 +184,7 @@ var SipProvider = (function (_super) {
             var callHistory = __spreadArrays([callInfo], _this.state.callHistory);
             _this.setState({ callHistory: callHistory });
         };
-        _this.makeCall = function (callee, isVideoCall, localVideoEl, remoteVideoEl) {
+        _this.makeCall = function (callee, isVideoCall, localVideoEl, remoteVideoEl, additionalInfo) {
             if (!callee) {
                 throw new Error("Destination must be defined (" + callee + " given)");
             }
@@ -204,7 +204,7 @@ var SipProvider = (function (_super) {
             }
             var rtcConfig = _this._getRTCConfig();
             var dtmfOptions = _this._getDtmfOptions();
-            var sipCall = new sipcall_1.SipCall(false, callee, _this._getCallConfig(), rtcConfig, dtmfOptions, _this._mediaEngine, _this.eventBus);
+            var sipCall = new sipcall_1.SipCall(false, callee, _this._getCallConfig(), rtcConfig, dtmfOptions, _this._mediaEngine, _this.eventBus, additionalInfo);
             var ua = _this._getUA();
             sipCall.dial(ua, callee, true, isVideoCall, localVideoEl, remoteVideoEl);
             callList.push(sipCall);
@@ -220,14 +220,8 @@ var SipProvider = (function (_super) {
         _this.setSpeakerVolume = function (vol) {
             _this._mediaEngine.changeOutputVolume(vol);
         };
-        _this.setMicVolume = function (vol) {
-            _this._mediaEngine.changeInputVolume(vol);
-        };
         _this.getSpeakerVolume = function () {
             return _this._mediaEngine.getOutputVolume();
-        };
-        _this.getMicVolume = function () {
-            return _this._mediaEngine.getInputVolume();
         };
         _this.getMediaDevices = function (deviceKind) {
             return _this._mediaEngine.availableDevices(deviceKind);
@@ -265,9 +259,7 @@ var SipProvider = (function (_super) {
             playTone: this.playTone.bind(this),
             stopTone: this.stopTone.bind(this),
             setSpeakerVolume: this.setSpeakerVolume.bind(this),
-            setMicVolume: this.setMicVolume.bind(this),
             getSpeakerVolume: this.getSpeakerVolume.bind(this),
-            getMicVolume: this.getMicVolume.bind(this),
             getMediaDevices: this.getMediaDevices.bind(this)
         };
     };
@@ -529,9 +521,7 @@ var SipProvider = (function (_super) {
         stopTone: PropTypes.func,
         getMediaDevices: PropTypes.func,
         setSpeakerVolume: PropTypes.func,
-        setMicVolume: PropTypes.func,
         getSpeakerVolume: PropTypes.func,
-        getMicVolume: PropTypes.func,
         setRingVolume: PropTypes.func,
     };
     SipProvider.propTypes = {

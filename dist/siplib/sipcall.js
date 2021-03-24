@@ -6,7 +6,7 @@ var sdpTransform = require("sdp-transform");
 var dummyLogger_1 = require("../lib/dummyLogger");
 var __1 = require("..");
 var SipCall = (function () {
-    function SipCall(isIncoming, remoteName, callConfig, rtcConfig, dtmfOptions, mediaEngine, eventEmitter) {
+    function SipCall(isIncoming, remoteName, callConfig, rtcConfig, dtmfOptions, mediaEngine, eventEmitter, additionalInfo) {
         var _this = this;
         this._init = function (isIncoming) {
             if (isIncoming === true) {
@@ -29,6 +29,9 @@ var SipCall = (function () {
         };
         this.getId = function () {
             return _this._id;
+        };
+        this.getAdditionalInfo = function () {
+            return _this._additionalInfo;
         };
         this.getExtraHeaders = function () {
             return _this._callConfig.extraHeaders;
@@ -91,9 +94,6 @@ var SipCall = (function () {
                 iceRestart: false,
             };
         };
-        this._setInputMediaStream = function (stream) {
-            _this._inputMediaStream = stream;
-        };
         this.getInputMediaStream = function () {
             return _this._inputMediaStream;
         };
@@ -152,8 +152,6 @@ var SipCall = (function () {
                     disp = 'progress';
                     break;
                 case __1.CALL_STATUS_CONNECTING:
-                    disp = 'connecting';
-                    break;
                 case __1.CALL_STATUS_ACTIVE:
                     disp = 'active';
                     if (_this._mediaSessionStatus === __1.MEDIA_SESSION_STATUS_SENDONLY ||
@@ -163,6 +161,9 @@ var SipCall = (function () {
                     break;
             }
             return disp;
+        };
+        this._setInputMediaStream = function (stream) {
+            _this._inputMediaStream = stream;
         };
         this._configureDebug = function () {
             if (_this._debug) {
@@ -447,6 +448,12 @@ var SipCall = (function () {
                 _this._eventEmitter.emit('call.update', { 'call': _this });
                 _this.getRTCSession().renegotiate(options);
             });
+        };
+        this.changeMicVolume = function (vol) {
+            var mediaStream = _this._inputMediaStream;
+            if (mediaStream) {
+                _this._mediaEngine.changeStreamVolume(mediaStream, vol);
+            }
         };
         this.renegotiate = function () {
             if (!_this.isSessionActive()) {
@@ -957,6 +964,7 @@ var SipCall = (function () {
         this._sdpStatus = __1.SDP_OFFER_PENDING;
         this._localMedia = [];
         this._remoteMedia = [];
+        this._additionalInfo = additionalInfo;
         this._init(isIncoming);
     }
     return SipCall;

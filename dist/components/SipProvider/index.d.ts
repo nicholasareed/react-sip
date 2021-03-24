@@ -91,9 +91,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
         stopTone: PropTypes.Requireable<(...args: any[]) => any>;
         getMediaDevices: PropTypes.Requireable<(...args: any[]) => any>;
         setSpeakerVolume: PropTypes.Requireable<(...args: any[]) => any>;
-        setMicVolume: PropTypes.Requireable<(...args: any[]) => any>;
         getSpeakerVolume: PropTypes.Requireable<(...args: any[]) => any>;
-        getMicVolume: PropTypes.Requireable<(...args: any[]) => any>;
         setRingVolume: PropTypes.Requireable<(...args: any[]) => any>;
     };
     static propTypes: {
@@ -190,9 +188,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
         playTone: any;
         stopTone: any;
         setSpeakerVolume: any;
-        setMicVolume: any;
         getSpeakerVolume: any;
-        getMicVolume: any;
         getMediaDevices: any;
     };
     _initProperties: () => void;
@@ -214,13 +210,11 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     _addToHistory: (call: any) => void;
     registerSip(): void;
     unregisterSip(options?: UnRegisterOptions): void;
-    makeCall: (callee: string, isVideoCall: boolean, localVideoEl: HTMLMediaElement, remoteVideoEl: HTMLMediaElement) => string;
+    makeCall: (callee: string, isVideoCall: boolean, localVideoEl: HTMLMediaElement, remoteVideoEl: HTMLMediaElement, additionalInfo: object) => string;
     playTone: (tone: string) => void;
     stopTone: (tone: string) => void;
     setSpeakerVolume: (vol: number) => void;
-    setMicVolume: (vol: number) => void;
     getSpeakerVolume: () => number;
-    getMicVolume: () => number;
     getMediaDevices: (deviceKind: MediaDeviceKind) => import("../../medialib/mediaengine").MediaDevice[];
     _terminateAll: () => void;
     _reconfigureDebug(): void;

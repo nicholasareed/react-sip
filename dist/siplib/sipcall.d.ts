@@ -32,6 +32,7 @@ export declare class SipCall {
     _callConfig: SipCallConfig;
     _rtcConfig: RTCConfiguration;
     _dtmfOptions: DtmfOptions;
+    _additionalInfo: object;
     _mediaSessionStatus: MediaSessionStatus;
     _mediaDeviceStatus: {
         audio: MediaDeviceStatus;
@@ -62,9 +63,10 @@ export declare class SipCall {
     remoteUri: string;
     remoteName: string;
     remoteUser: string;
-    constructor(isIncoming: boolean, remoteName: string, callConfig: SipCallConfig, rtcConfig: RTCConfiguration, dtmfOptions: DtmfOptions, mediaEngine: MediaEngine, eventEmitter: EventEmitter);
+    constructor(isIncoming: boolean, remoteName: string, callConfig: SipCallConfig, rtcConfig: RTCConfiguration, dtmfOptions: DtmfOptions, mediaEngine: MediaEngine, eventEmitter: EventEmitter, additionalInfo: object);
     _init: (isIncoming: boolean) => void;
     getId: () => string;
+    getAdditionalInfo: () => object;
     getExtraHeaders: () => SipExtraHeaders;
     getSessionTimerExpires: () => number;
     setRTCSession: (rtcSession: RTCSession) => void;
@@ -82,7 +84,6 @@ export declare class SipCall {
     getDtmfOptions: () => DtmfOptions;
     getRTCConfig: () => RTCConfiguration;
     getRTCOfferConstraints: () => RTCOfferOptions;
-    _setInputMediaStream: (stream: MediaStream | null) => void;
     getInputMediaStream: () => MediaStream | null;
     onNewRTCSession: (rtcSession: RTCSession) => void;
     setPeerConnection: (conn: RTCPeerConnection | null) => void;
@@ -92,6 +93,7 @@ export declare class SipCall {
     errorReason: () => string;
     isFailed: () => boolean;
     getDisposition: () => string;
+    _setInputMediaStream: (stream: MediaStream | null) => void;
     _configureDebug: () => void;
     _uuid: () => string;
     dial: (ua: JsSIP.UA, target: string, hasAudio: boolean, hasVideo: boolean, localVideoEl?: HTMLMediaElement | null, remoteVideoEl?: HTMLMediaElement | null) => void;
@@ -106,6 +108,7 @@ export declare class SipCall {
     isOnLocalHold: () => boolean;
     isOnRemoteHold: () => boolean;
     offerVideo: (localVideoEl: HTMLMediaElement | null) => void;
+    changeMicVolume: (vol: number) => void;
     renegotiate: () => boolean;
     _mute: (isAudio?: boolean) => void;
     _unmute: (isAudio?: boolean) => void;
