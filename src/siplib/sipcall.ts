@@ -101,6 +101,9 @@ export class SipCall {
   _sdpStatus: SdpOfferAnswerStatus;
   _localMedia: SdpMediaInfo[];
   _remoteMedia: SdpMediaInfo[];
+  _modifySdp: boolean;  // flag to denote SDP needs to be modified
+  _audioCodecs: string[]; // audio codecs for the call
+  _videoCodecs: string[]; // video codecs for the call
   // instance access
   startTime: string | undefined;
   endTime: string | undefined;
@@ -137,6 +140,10 @@ export class SipCall {
     this._localMedia = [];
     this._remoteMedia = [];
     this._additionalInfo = additionalInfo;
+    // configurable parameters
+    this._modifySdp = false;
+    this._audioCodecs = ['G722', 'PCMA', 'PCMU', 'telephone-event', 'CN'];
+    this._videoCodecs = ['H264'];
     this._init(isIncoming);
   }
 
@@ -611,10 +618,13 @@ export class SipCall {
     // @ts-ignore
     videoTransceiver?.direction = 'sendrecv';
 
-    this._mediaEngine.updateStream(this._inputMediaStream, true, true).then((stream) => {
+    this._mediaEngine.updateStream(this._inputMediaStream, false, true).then((stream) => {
       if (!stream) {
         throw Error('Failed to update the input streams in offerVideo');
       }
+      stream.getVideoTracks().forEach((track) => {
+        peerConnection?.addTrack(track, stream);
+      });
       if (this._localVideoEl) {
         this._localVideoEl.srcObject = stream;
       }
@@ -851,7 +861,7 @@ export class SipCall {
       this._remoteVideoEl
     );
   };
-  _handleLocalSdp = (sdp: string): void => {
+  _handleLocalSdp = (sdp: string): string => {
     const sdpObj = sdpTransform.parse(sdp);
     // const oldMedia = this._localMedia;
     this._localMedia = [];
@@ -866,10 +876,44 @@ export class SipCall {
         console.log('Local Video present');
       }
       this._localMedia.push({mode, type, payloads: media.rtp});
+
+      if (this._modifySdp) {
+        if (type === 'video' ) {
+          // tslint:disable-next-line:no-console
+          console.log(media);
+          const purgePts: number[] = [];
+          const supportedCodecs = this._videoCodecs;
+          media.rtp.forEach((item) => {
+            if (!supportedCodecs.includes(item.codec)) {
+              purgePts.push(item.payload);
+            }
+            /*
+            // if control over dynamic payload types
+            // remove dynamic payloads
+            else if (item.payload !== 125) {
+              purgePts.push(item.payload);
+            }
+             */
+          });
+          const pts = media.payloads.toString().split(' ');
+          const filteredPts = pts.filter((item) => !purgePts.includes(parseInt(item, 10)));
+          const fmtp = media.fmtp.filter((item) => !purgePts.includes(item.payload));
+          const rtcpFb = media.rtcpFb.filter((item) => !purgePts.includes(item.payload));
+          const rtp = media.rtp.filter((item) => !purgePts.includes(item.payload))
+          media.payloads = filteredPts.join(' ');
+          media.fmtp = fmtp;
+          media.rtcpFb = rtcpFb;
+          media.rtp = rtp;
+        }
+      }
     });
     // tslint:disable-next-line:no-console
     // console.log(this._localMedia);
-  }
+    const sdpStr = sdpTransform.write(sdpObj);
+    // tslint:disable-next-line:no-console
+    // console.log(sdpStr);
+    return sdpStr;
+  };
   _handleRemoteOffer = (sdp: string): void => {
     const sdpObj = sdpTransform.parse(sdp);
     // RFC 3264
@@ -902,7 +946,7 @@ export class SipCall {
     this._sdpStatus = SDP_OFFER_RECEIVED;
     // tslint:disable-next-line:no-console
     console.log(this._remoteMedia);
-  }
+  };
   _handleRemoteAnswer = (sdp: string): void => {
     const sdpObj = sdpTransform.parse(sdp);
     // RFC 3264
@@ -935,7 +979,7 @@ export class SipCall {
     this._sdpStatus = SDP_OFFER_ANSWER_COMPLETE;
     // tslint:disable-next-line:no-console
     console.log(this._remoteMedia);
-  }
+  };
   _initSessionEventHandler = (): void => {
     const rtcSession = this.getRTCSession();
     if (!this.isSessionActive()) {
@@ -1218,7 +1262,10 @@ export class SipCall {
         // tslint:disable-next-line:no-console
         // console.log(sdp);
         // local sdp
-        this._handleLocalSdp(sdp);
+        const modified = this._handleLocalSdp(sdp);
+        if (this._modifySdp) {
+          data.sdp = modified;
+        }
       }
     });
     rtcSession!.on('icecandidate', (data) => {
