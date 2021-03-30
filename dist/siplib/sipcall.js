@@ -427,10 +427,13 @@ var SipCall = (function () {
             }
             var videoTransceiver = transceivers[1];
             videoTransceiver === null || videoTransceiver === void 0 ? void 0 : videoTransceiver.direction = 'sendrecv';
-            _this._mediaEngine.updateStream(_this._inputMediaStream, true, true).then(function (stream) {
+            _this._mediaEngine.updateStream(_this._inputMediaStream, false, true).then(function (stream) {
                 if (!stream) {
                     throw Error('Failed to update the input streams in offerVideo');
                 }
+                stream.getVideoTracks().forEach(function (track) {
+                    peerConnection === null || peerConnection === void 0 ? void 0 : peerConnection.addTrack(track, stream);
+                });
                 if (_this._localVideoEl) {
                     _this._localVideoEl.srcObject = stream;
                 }
@@ -649,7 +652,30 @@ var SipCall = (function () {
                     console.log('Local Video present');
                 }
                 _this._localMedia.push({ mode: mode, type: type, payloads: media.rtp });
+                if (_this._modifySdp) {
+                    if (type === 'video') {
+                        console.log(media);
+                        var purgePts_1 = [];
+                        var supportedCodecs_1 = _this._videoCodecs;
+                        media.rtp.forEach(function (item) {
+                            if (!supportedCodecs_1.includes(item.codec)) {
+                                purgePts_1.push(item.payload);
+                            }
+                        });
+                        var pts = media.payloads.toString().split(' ');
+                        var filteredPts = pts.filter(function (item) { return !purgePts_1.includes(parseInt(item, 10)); });
+                        var fmtp = media.fmtp.filter(function (item) { return !purgePts_1.includes(item.payload); });
+                        var rtcpFb = media.rtcpFb.filter(function (item) { return !purgePts_1.includes(item.payload); });
+                        var rtp = media.rtp.filter(function (item) { return !purgePts_1.includes(item.payload); });
+                        media.payloads = filteredPts.join(' ');
+                        media.fmtp = fmtp;
+                        media.rtcpFb = rtcpFb;
+                        media.rtp = rtp;
+                    }
+                }
             });
+            var sdpStr = sdpTransform.write(sdpObj);
+            return sdpStr;
         };
         this._handleRemoteOffer = function (sdp) {
             var sdpObj = sdpTransform.parse(sdp);
@@ -937,7 +963,10 @@ var SipCall = (function () {
                     }
                 }
                 else {
-                    _this._handleLocalSdp(sdp);
+                    var modified = _this._handleLocalSdp(sdp);
+                    if (_this._modifySdp) {
+                        data.sdp = modified;
+                    }
                 }
             });
             rtcSession.on('icecandidate', function (data) {
@@ -965,6 +994,9 @@ var SipCall = (function () {
         this._localMedia = [];
         this._remoteMedia = [];
         this._additionalInfo = additionalInfo;
+        this._modifySdp = false;
+        this._audioCodecs = ['G722', 'PCMA', 'PCMU', 'telephone-event', 'CN'];
+        this._videoCodecs = ['H264'];
         this._init(isIncoming);
     }
     return SipCall;

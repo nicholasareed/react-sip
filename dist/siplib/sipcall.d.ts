@@ -58,6 +58,9 @@ export declare class SipCall {
     _sdpStatus: SdpOfferAnswerStatus;
     _localMedia: SdpMediaInfo[];
     _remoteMedia: SdpMediaInfo[];
+    _modifySdp: boolean;
+    _audioCodecs: string[];
+    _videoCodecs: string[];
     startTime: string | undefined;
     endTime: string | undefined;
     remoteUri: string;
@@ -128,7 +131,7 @@ export declare class SipCall {
     _onTransferAcceptNotify: (data: any) => void;
     _onTransferFailureNotify: (data: any) => void;
     _handleRemoteTrack: (track: MediaStreamTrack) => void;
-    _handleLocalSdp: (sdp: string) => void;
+    _handleLocalSdp: (sdp: string) => string;
     _handleRemoteOffer: (sdp: string) => void;
     _handleRemoteAnswer: (sdp: string) => void;
     _initSessionEventHandler: () => void;
