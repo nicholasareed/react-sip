@@ -180,6 +180,7 @@ var SipProvider = (function (_super) {
                 _endTime: call.endTime,
                 _endType: call._endType,
                 _errorReason: call._errorReason,
+                _additionalInfo: call._additionalInfo,
             };
             var callHistory = __spreadArrays([callInfo], _this.state.callHistory);
             _this.setState({ callHistory: callHistory });

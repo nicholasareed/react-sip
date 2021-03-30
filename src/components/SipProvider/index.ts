@@ -352,6 +352,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       _endTime: call.endTime,
       _endType: call._endType,
       _errorReason: call._errorReason,
+      _additionalInfo: call._additionalInfo,
     };
     const callHistory: CallInfo[] = [callInfo, ...this.state.callHistory];
     this.setState({ callHistory });
