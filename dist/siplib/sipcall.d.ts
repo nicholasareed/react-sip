@@ -33,6 +33,7 @@ export declare class SipCall {
     _rtcConfig: RTCConfiguration;
     _dtmfOptions: DtmfOptions;
     _additionalInfo: object;
+    _request: object;
     _mediaSessionStatus: MediaSessionStatus;
     _mediaDeviceStatus: {
         audio: MediaDeviceStatus;
@@ -88,7 +89,7 @@ export declare class SipCall {
     getRTCConfig: () => RTCConfiguration;
     getRTCOfferConstraints: () => RTCOfferOptions;
     getInputMediaStream: () => MediaStream | null;
-    onNewRTCSession: (rtcSession: RTCSession) => void;
+    onNewRTCSession: (rtcSession: RTCSession, request: any) => void;
     setPeerConnection: (conn: RTCPeerConnection | null) => void;
     isDialing: () => boolean;
     isRinging: () => boolean;

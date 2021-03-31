@@ -446,7 +446,7 @@ var SipProvider = (function (_super) {
                     if (!_this || _this.ua !== ua) {
                         return;
                     }
-                    var originator = data.originator, session = data.session;
+                    var originator = data.originator, session = data.session, request = data.request;
                     if (originator === 'remote') {
                         var remoteName = session.remote_identity.display_name;
                         if (remoteName === null || remoteName === '') {
@@ -461,14 +461,14 @@ var SipProvider = (function (_super) {
                             return;
                         }
                         var sipCall = new sipcall_1.SipCall(true, remoteName, _this._getCallConfig(), _this._getRTCConfig(), _this._getDtmfOptions(), _this._mediaEngine, _this.eventBus);
-                        sipCall.onNewRTCSession(session);
+                        sipCall.onNewRTCSession(session, request);
                         callList.push(sipCall);
                         _this.setState({ callList: callList });
                     }
                     else {
                         var outCall = callList.find(function (call) { return call.isDialing() === true; });
                         if (outCall !== undefined) {
-                            outCall.onNewRTCSession(session);
+                            outCall.onNewRTCSession(session, request);
                         }
                     }
                 });

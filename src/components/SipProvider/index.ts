@@ -601,7 +601,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
         return;
       }
       // check the originator
-      const { originator, session } = data;
+      const { originator, session, request } = data;
       // INCOMING CALL
       if (originator === 'remote') {
         let remoteName = session.remote_identity.display_name;
@@ -627,14 +627,14 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
           this._mediaEngine,
           this.eventBus,
         );
-        sipCall.onNewRTCSession(session);
+        sipCall.onNewRTCSession(session, request);
         callList.push(sipCall);
         this.setState({ callList });
       } else {
         // fetch
         const outCall = callList.find((call) => call.isDialing() === true);
         if (outCall !== undefined) {
-          outCall.onNewRTCSession(session);
+          outCall.onNewRTCSession(session, request);
         }
       }
     });
