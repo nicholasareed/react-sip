@@ -97,7 +97,7 @@ var SipCall = (function () {
         this.getInputMediaStream = function () {
             return _this._inputMediaStream;
         };
-        this.onNewRTCSession = function (rtcSession) {
+        this.onNewRTCSession = function (rtcSession, request) {
             console.log('ON NEW RTC Session');
             if (!rtcSession) {
                 throw Error("New Session is not active");
@@ -108,6 +108,7 @@ var SipCall = (function () {
             }
             _this.remoteUser = rtcSession.remote_identity.uri.user;
             _this.remoteUri = rtcSession.remote_identity.uri.toAor();
+            _this._request = request;
             _this.setRTCSession(rtcSession);
             _this._initSessionEventHandler();
             _this._eventEmitter.emit('call.update', { 'call': _this });

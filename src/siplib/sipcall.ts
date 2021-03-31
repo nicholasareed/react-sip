@@ -73,6 +73,7 @@ export class SipCall {
   _rtcConfig: RTCConfiguration;
   _dtmfOptions: DtmfOptions;
   _additionalInfo: object;
+  _request: object;
   _mediaSessionStatus: MediaSessionStatus;
   _mediaDeviceStatus: {
     audio: MediaDeviceStatus,
@@ -237,7 +238,7 @@ export class SipCall {
   getInputMediaStream = (): MediaStream | null => {
     return this._inputMediaStream;
   };
-  onNewRTCSession = (rtcSession: RTCSession): void => {
+  onNewRTCSession = (rtcSession: RTCSession, request): void => {
     // tslint:disable-next-line:no-console
     console.log('ON NEW RTC Session');
     if (!rtcSession) {
@@ -249,6 +250,7 @@ export class SipCall {
     }
     this.remoteUser = rtcSession.remote_identity.uri.user;
     this.remoteUri = rtcSession.remote_identity.uri.toAor();
+    this._request = request;
     this.setRTCSession(rtcSession);
     this._initSessionEventHandler();
     this._eventEmitter.emit('call.update', {'call': this});
