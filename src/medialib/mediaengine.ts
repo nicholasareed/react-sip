@@ -12,45 +12,51 @@ const TONES = new Map([
 ]);
 
 export interface AudioConfig {
-  enabled: boolean,
-  deviceIds: string[],
-  element: WebAudioHTMLMediaElement | null,
+  enabled: boolean;
+  deviceIds: string[];
+  element: WebAudioHTMLMediaElement | null;
 }
 export interface VideoConfig {
-  enabled: boolean,
-  deviceIds: string[],
-  element: HTMLMediaElement | null,
+  enabled: boolean;
+  deviceIds: string[];
+  element: HTMLMediaElement | null;
 }
 export interface MediaEngineConfig {
   audio: {
     in: AudioConfig,
-    out: AudioConfig,
-  },
+    out: AudioConfig
+  };
   video: {
     in: VideoConfig,
-    out: VideoConfig,
-  },
+    out: VideoConfig
+  };
 }
 export interface MediaDevice {
-  deviceId: string,
-  kind: string,
-  label: string,
+  deviceId: string;
+  kind: string;
+  label: string;
 }
 export interface InputStreamContext {
-  id: string,
-  hasVideo: boolean,
-  srcNode: MediaStreamAudioSourceNode,
-  destNode: MediaStreamAudioDestinationNode,
-  gainNode: GainNode,
-  rawStream: MediaStream, // feed to source audio node
-  amplStream: MediaStream
+  id: string;
+  hasVideo: boolean;
+  srcNode: MediaStreamAudioSourceNode;
+  destNode: MediaStreamAudioDestinationNode;
+  gainNode: GainNode;
+  rawStream: MediaStream; // feed to source audio node
+  amplStream: MediaStream;
+}
+export interface OutputStreamContext {
+  id: string;
+  stream: MediaStream;
+  volume: number;
 }
 export class MediaEngine {
   _config: MediaEngineConfig | null;
   _availableDevices: MediaDevice[];
   _outputVolume: number;
   _audioContext: AudioContext;
-  _streamContexts: InputStreamContext[];
+  _inStreamContexts: InputStreamContext[];
+  _outStreamContexts: OutputStreamContext[];
   _isPlaying: boolean;
   _supportedDeviceTypes: string[];
   _eventEmitter: EventEmitter;
@@ -58,9 +64,10 @@ export class MediaEngine {
   constructor(config: MediaEngineConfig | null, eventEmitter: EventEmitter) {
     this._isPlaying = false;
     this._availableDevices = [];
-    this._streamContexts = [];
+    this._inStreamContexts = [];
+    this._outStreamContexts = [];
     this._supportedDeviceTypes = ['audioinput', 'audiooutput', 'videoinput'];
-    this._outputVolume = 1;
+    this._outputVolume = 0.8;  // default 80%
     this._eventEmitter = eventEmitter;
     this._prepareConfig(config);
     this._initDevices();
@@ -122,7 +129,7 @@ export class MediaEngine {
         });
       }
 
-      this._streamContexts.push({
+      this._inStreamContexts.push({
         id: reqId,
         hasVideo: video,
         srcNode: audioSource,
@@ -139,9 +146,9 @@ export class MediaEngine {
   updateStream = (reqId: string,
                   audio: boolean,
                   video: boolean): Promise<MediaStream | null> => {
-    const index = this._streamContexts.findIndex((ctxt) => ctxt.id === reqId);
+    const index = this._inStreamContexts.findIndex((ctxt) => ctxt.id === reqId);
     if (index !== -1) {
-      const streamContext = this._streamContexts[index];
+      const streamContext = this._inStreamContexts[index];
       const appStream = streamContext.amplStream;
       streamContext.hasVideo = video;
       if (audio) {
@@ -160,6 +167,9 @@ export class MediaEngine {
       }
       const opts = this._getMediaConstraints(audio, video);
       return navigator.mediaDevices.getUserMedia(opts).then((mediaStream) => {
+        // currently update is used to add video
+        // Video tracks are not routed through Gain Node
+        // TODO: if audio is added
         mediaStream.getTracks().forEach((track) => {
           appStream!.addTrack(track);
         });
@@ -169,9 +179,9 @@ export class MediaEngine {
     return Promise.resolve(null);
   };
   closeStream = (reqId: string): void => {
-    const index = this._streamContexts.findIndex((item) => item.id === reqId);
+    const index = this._inStreamContexts.findIndex((item) => item.id === reqId);
     if (index !== -1) {
-      const streamContext = this._streamContexts[index];
+      const streamContext = this._inStreamContexts[index];
       const mediaStream = streamContext.amplStream;
 
       streamContext.gainNode.disconnect();
@@ -186,12 +196,19 @@ export class MediaEngine {
         track.enabled = false;
         track.stop();
       });
-      this._streamContexts.splice(index, 1);
+      this._inStreamContexts.splice(index, 1);
+    }
+
+    // out stream context
+    const outIndex = this._outStreamContexts.findIndex(
+      (item) => item.id === reqId);
+    if (outIndex !== -1) {
+      this._outStreamContexts.splice(outIndex, 1);
     }
   };
   closeAll = () => {
     // close all opened streams
-    this._streamContexts.forEach((streamContext) => {
+    this._inStreamContexts.forEach((streamContext) => {
       streamContext.gainNode.disconnect();
       streamContext.srcNode.disconnect();
       streamContext.destNode.disconnect();
@@ -204,10 +221,12 @@ export class MediaEngine {
         track.stop();
       });
     });
-    this._streamContexts = [];
+    this._inStreamContexts = [];
+    this._outStreamContexts = [];
     this._isPlaying = false;
   };
-  startOrUpdateOutStreams = (mediaStream: MediaStream | null,
+  startOrUpdateOutStreams = (reqId: string,
+                             mediaStream: MediaStream | null,
                              track: MediaStreamTrack,
                              audioElement: HTMLMediaElement | null,
                              videoElement: HTMLMediaElement | null): void => {
@@ -217,6 +236,7 @@ export class MediaEngine {
         audioOut.element = audioElement as WebAudioHTMLMediaElement;
         audioOut.element!.setSinkId(audioOut.deviceIds[0]);
         audioOut.element!.autoplay = true;
+        audioOut.element.volume = this._outputVolume;
       }
       this._isPlaying = true;
     }
@@ -259,8 +279,29 @@ export class MediaEngine {
           })
          */
       }
+      const outContext = this._outStreamContexts.find((item) => item.id === reqId);
+      // new context
+      if (outContext === undefined) {
+        if (track.kind === 'audio') {
+          let vol = this._outputVolume;
+          if (!this._outStreamContexts.length && element) {
+            element.volume = this._outputVolume;
+          } else {
+            vol = this._outStreamContexts[0].volume;
+          }
+          this._outStreamContexts.push({
+            id: reqId,
+            stream: mediaStream,
+            volume: vol
+          });
+        }
+      } else {
+        if (outContext.stream.id !== mediaStream.id) {
+          outContext.stream = mediaStream;
+        }
+      }
     }
-  }
+  };
   muteAudio = (): void => {
     this._enableAudioChannels(false);
   };
@@ -295,16 +336,27 @@ export class MediaEngine {
     toneRes.audio.currentTime = 0.0;
   };
   // change output volume
+  // used only for initial volume
   changeOutputVolume = (vol: number): void => {
     if (vol > 1) {
       vol = 1;
     }
-    const value = vol;
-    if (this._isPlaying) {
+    this._outputVolume = vol;
+  };
+  changeOutStreamVolume = (reqId: string, value: number): void => {
+    if (value > 1) {
+      value = 1;
+    }
+    const streamCtxt = this._outStreamContexts.find((item) => item.id === reqId);
+    if (streamCtxt !== undefined) {
       const audioElement = this._config?.audio.out.element;
       audioElement!.volume = value;
+      // currently volume is set on the element
+      // not using audio nodes
+      this._outStreamContexts.forEach((ctxt) => {
+        ctxt.volume = value;
+      });
     }
-    this._outputVolume = value;
   };
   // change input volume
   changeInputVolume = (reqId: string, vol: number): void => {
@@ -312,7 +364,7 @@ export class MediaEngine {
       vol = 1;
     }
     const value = vol * 2;
-    const streamContext = this._streamContexts.find(
+    const streamContext = this._inStreamContexts.find(
       (item) => item.id === reqId);
     if (streamContext !== undefined) {
       streamContext.gainNode.gain.value = value;
@@ -321,8 +373,15 @@ export class MediaEngine {
   getOutputVolume = (): number => {
     return this._outputVolume;
   };
+  getOutStreamVolume = (reqId: string): number => {
+    const ctxt = this._outStreamContexts.find((item) => item.id === reqId);
+    if (ctxt !== undefined) {
+      return ctxt.volume;
+    }
+    return 0.8;
+  };
   getInputVolume = (reqId: string): number => {
-    const streamContext = this._streamContexts.find(
+    const streamContext = this._inStreamContexts.find(
       (item) => item.id === reqId);
     if (streamContext !== undefined) {
       const value = streamContext.gainNode.gain.value;
@@ -358,7 +417,7 @@ export class MediaEngine {
       throw Error(`audioinput device with id ${deviceId} not found`);
     }
     this._changeDeviceConfig('audioinput', deviceId);
-    this._streamContexts.forEach((ctxt) => {
+    this._inStreamContexts.forEach((ctxt) => {
       const reqId = ctxt.id;
       const rawStream = ctxt.rawStream;
       const amplStream = ctxt.amplStream;
@@ -413,7 +472,7 @@ export class MediaEngine {
       throw Error(`videoinput device with id ${deviceId} not found`);
     }
     this._changeDeviceConfig('videoinput', deviceId);
-    this._streamContexts.forEach((ctxt) => {
+    this._inStreamContexts.forEach((ctxt) => {
       const reqId = ctxt.id;
       const amplStream = ctxt.amplStream;
       amplStream.getVideoTracks().forEach((track) => {
@@ -522,8 +581,9 @@ export class MediaEngine {
       };
       const audioOut = this._config.audio.out;
       audioOut.element = window.document.createElement('audio') as WebAudioHTMLMediaElement;
-      audioOut.element!.setSinkId(audioOut.deviceIds[0]);
+      audioOut.element.setSinkId(audioOut.deviceIds[0]);
       audioOut.element.autoplay = true;
+      audioOut.element.volume = this._outputVolume;
     } else {
       let deviceId: string | null = null;
       if (config.audio.in.enabled) {

@@ -309,6 +309,13 @@ export class SipCall {
 
     return disp;
   };
+  changeOutputVolume = (vol: number): void => {
+    this._mediaEngine.changeOutStreamVolume(this.getId(), vol);
+    this._eventEmitter.emit('call.update', {'call': this});
+  };
+  getOutputVolume = (): number => {
+    return this._mediaEngine.getOutStreamVolume(this.getId());
+  };
   _setInputMediaStream = (stream: MediaStream | null): void => {
     this._inputMediaStream = stream;
   };
@@ -461,14 +468,11 @@ export class SipCall {
 
     this.getRTCSession()!.terminate(options);
     // close the input stream
-    const inputStream = this.getInputMediaStream();
-    if (inputStream) {
-      this._mediaEngine.closeStream(this.getId());
-      this._setInputMediaStream(null);
-      if (this._localVideoEl) {
-        this._localVideoEl.srcObject = null;
-        this._localVideoEl = null;
-      }
+    this._mediaEngine.closeStream(this.getId());
+    this._setInputMediaStream(null);
+    if (this._localVideoEl) {
+      this._localVideoEl.srcObject = null;
+      this._localVideoEl = null;
     }
     if (this.getCallStatus() === CALL_STATUS_PROGRESS) {
       this._mediaEngine.stopTone('ringback');
@@ -856,6 +860,7 @@ export class SipCall {
   };
   _handleRemoteTrack = (track: MediaStreamTrack): void => {
     this._mediaEngine.startOrUpdateOutStreams(
+      this.getId(),
       this._outputMediaStream,
       track,
       null,
@@ -996,6 +1001,7 @@ export class SipCall {
         console.log('ON track event');
         this._logger.debug('PeerConnection "ontrack" event received');
         this._handleRemoteTrack(event.track);
+        this._eventEmitter.emit('call.update', {'call': this});
 
         event.track.addEventListener('unmute', (ev) => {
           // const activeTrack = ev.target as MediaStreamTrack;
@@ -1030,6 +1036,7 @@ export class SipCall {
         console.log('ON track event');
         this._logger.debug('PeerConnection "ontrack" event received');
         this._handleRemoteTrack(event.track);
+        this._eventEmitter.emit('call.update', {'call': this});
       })
       /*
       data.peerconnection.addEventListener('addstream', (event) => {
@@ -1088,14 +1095,9 @@ export class SipCall {
       this._logger.debug('RTCSession "ended" event received', data)
       // const originator: string = data.originator;
       // const reason: string = data.cause;
-      if(this._inputMediaStream) {
-        this._mediaEngine.closeStream(this.getId());
-        this._setInputMediaStream(null);
-      }
-      if(this._outputMediaStream) {
-        this._mediaEngine.closeStream(this.getId());
-        this._outputMediaStream = null;
-      }
+      this._mediaEngine.closeStream(this.getId());
+      this._setInputMediaStream(null);
+      this._outputMediaStream = null;
       if (this._localVideoEl) {
         this._localVideoEl.srcObject = null;
         this._localVideoEl = null;
@@ -1124,14 +1126,9 @@ export class SipCall {
       this._logger.debug('RTCSession "failed" event received', data)
       const originator = data.originator;
       const reason = data.cause;
-      if(this._inputMediaStream) {
-        this._mediaEngine.closeStream(this.getId());
-        this._setInputMediaStream(null);
-      }
-      if(this._outputMediaStream) {
-        this._mediaEngine.closeStream(this.getId());
-        this._outputMediaStream = null;
-      }
+      this._mediaEngine.closeStream(this.getId());
+      this._setInputMediaStream(null);
+      this._outputMediaStream = null;
       if (this._localVideoEl) {
         this._localVideoEl.srcObject = null;
         this._localVideoEl = null;
