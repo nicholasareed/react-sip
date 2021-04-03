@@ -3,7 +3,7 @@ import * as React from 'react';
 import * as JsSIP from 'jssip';
 import * as EventEmitter from 'eventemitter3';
 import { UnRegisterOptions } from 'jssip/lib/UA';
-import { MediaEngine } from '../../medialib/mediaengine';
+import { MediaDevice, MediaEngine } from '../../medialib/mediaengine';
 import dummyLogger from '../../lib/dummyLogger';
 import { SipUAConfig, SipExtraHeaders } from '../../siplib/sipua';
 import { DtmfOptions, SipCall, SipCallConfig } from '../../siplib/sipcall';
@@ -31,6 +31,7 @@ import {
   CallInfo,
   callInfoListPropType,
   callHistoryPropType,
+  mediaDeviceListPropType
 } from '../../lib/types';
 import { DTMF_TRANSPORT } from 'jssip/lib/Constants';
 
@@ -65,6 +66,7 @@ export interface JsSipState {
   errorMessage: string;
   callList: SipCall[];
   callHistory: CallInfo[];
+  mediaDevices: MediaDevice[];
 }
 
 export default class SipProvider extends React.Component<JsSipConfig, JsSipState> {
@@ -85,10 +87,14 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     // media
     playTone: PropTypes.func,
     stopTone: PropTypes.func,
-    getMediaDevices: PropTypes.func,
     setSpeakerVolume: PropTypes.func,
     getSpeakerVolume: PropTypes.func,
     setRingVolume: PropTypes.func,
+    changeAudioInput: PropTypes.func,
+    changeAudioOutput: PropTypes.func,
+    changeVideoInput: PropTypes.func,
+    mediaDevices: mediaDeviceListPropType,
+    getPreferredDevice: PropTypes.func
   };
 
   static propTypes = {
@@ -160,6 +166,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       errorMessage: '',
       callList: [],
       callHistory: [],
+      mediaDevices: []
     };
     this.ua = null;
     this.eventBus = new EventEmitter();
@@ -188,7 +195,11 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       stopTone: this.stopTone.bind(this),
       setSpeakerVolume: this.setSpeakerVolume.bind(this),
       getSpeakerVolume: this.getSpeakerVolume.bind(this),
-      getMediaDevices: this.getMediaDevices.bind(this)
+      changeAudioInput: this.changeAudioInput.bind(this),
+      changeAudioOutput: this.changeAudioOutput.bind(this),
+      changeVideoInput: this.changeVideoInput.bind(this),
+      mediaDevices: [...this.state.mediaDevices],
+      getPreferredDevice: this.getPreferredDevice.bind(this)
     };
   }
 
@@ -216,7 +227,8 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       channelType: DTMF_TRANSPORT.RFC2833, // INFO based ??
     };
     // initialize the media engine
-    this._mediaEngine = new MediaEngine(null);
+    this._mediaEngine = new MediaEngine(null, this.eventBus);
+
   };
   _getCallConfig = (): SipCallConfig => {
     return this._callConfig;
@@ -352,7 +364,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       _endTime: call.endTime,
       _endType: call._endType,
       _errorReason: call._errorReason,
-      _additionalInfo: call._additionalInfo,
+      _additionalInfo: call._additionalInfo
     };
     const callHistory: CallInfo[] = [callInfo, ...this.state.callHistory];
     this.setState({ callHistory });
@@ -439,9 +451,17 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
   getSpeakerVolume = () => {
     return this._mediaEngine.getOutputVolume();
   };
-  // available devices
-  getMediaDevices = (deviceKind: MediaDeviceKind) => {
-    return this._mediaEngine.availableDevices(deviceKind);
+  changeAudioInput = (deviceId: string): void => {
+    this._mediaEngine.changeAudioInput(deviceId);
+  };
+  changeAudioOutput = (deviceId: string): void => {
+    this._mediaEngine.changeAudioOutput(deviceId);
+  };
+  changeVideoInput = (deviceId: string): void => {
+    this._mediaEngine.changeVideoInput(deviceId);
+  };
+  getPreferredDevice = (deviceKind: string): string => {
+    return this._mediaEngine.getConfiguredDevice(deviceKind);
   };
   // Clear all existing sessions from the UA
   _terminateAll = () => {
@@ -669,6 +689,13 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       }
       // tslint:disable-next-line:no-console
       console.log(callList);
+    });
+    // MEDIA DEVICES
+    eventBus.on('media.device.update', (event) => {
+      // tslint:disable-next-line:no-console
+      console.log('MEDIA DEVICE UPDATE');
+      const mediaDevices = this._mediaEngine.fetchAllDevices();
+      this.setState({ mediaDevices });
     });
 
     const extraHeadersRegister = this.props.extraHeaders.register || [];

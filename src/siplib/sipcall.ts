@@ -120,6 +120,7 @@ export class SipCall {
               mediaEngine: MediaEngine,
               eventEmitter: EventEmitter,
               additionalInfo: object) {
+    this._debug = true;
     this._rtcSession = null;
     this._callConfig = callConfig;
     this._rtcConfig = rtcConfig;
@@ -146,6 +147,7 @@ export class SipCall {
     this._audioCodecs = ['G722', 'PCMA', 'PCMU', 'telephone-event', 'CN'];
     this._videoCodecs = ['H264'];
     this._init(isIncoming);
+    this._mediaEventHandler();
   }
 
   _init = (isIncoming: boolean): void => {
@@ -341,7 +343,7 @@ export class SipCall {
       this._remoteVideoEl = remoteVideoEl;
     }
 
-    this._mediaEngine.openStreams(hasAudio, hasVideo).then((stream) => {
+    this._mediaEngine.openStreams(this.getId(), hasAudio, hasVideo).then((stream) => {
       if (!stream) {
         throw Error('Failed to open the input streams');
       }
@@ -393,7 +395,7 @@ export class SipCall {
     this._localVideoEl = localVideoEl;
     this._remoteVideoEl = remoteVideoEl;
 
-    this._mediaEngine.openStreams(hasAudio, hasVideo).then((inputStream) => {
+    this._mediaEngine.openStreams(this.getId(), hasAudio, hasVideo).then((inputStream) => {
       // attach input stream to HTML media elements
       if (hasVideo && localVideoEl) {
         localVideoEl.srcObject = inputStream;
@@ -461,7 +463,7 @@ export class SipCall {
     // close the input stream
     const inputStream = this.getInputMediaStream();
     if (inputStream) {
-      this._mediaEngine.closeStream(inputStream);
+      this._mediaEngine.closeStream(this.getId());
       this._setInputMediaStream(null);
       if (this._localVideoEl) {
         this._localVideoEl.srcObject = null;
@@ -620,7 +622,7 @@ export class SipCall {
     // @ts-ignore
     videoTransceiver?.direction = 'sendrecv';
 
-    this._mediaEngine.updateStream(this._inputMediaStream, false, true).then((stream) => {
+    this._mediaEngine.updateStream(this.getId(), false, true).then((stream) => {
       if (!stream) {
         throw Error('Failed to update the input streams in offerVideo');
       }
@@ -646,10 +648,7 @@ export class SipCall {
     });
   }
   changeMicVolume = (vol: number): void => {
-    const mediaStream = this._inputMediaStream;
-    if (mediaStream) {
-      this._mediaEngine.changeStreamVolume(mediaStream, vol);
-    }
+    this._mediaEngine.changeInputVolume(this.getId(), vol);
   };
   renegotiate = (): boolean => {
     if (!this.isSessionActive()) {
@@ -1090,11 +1089,11 @@ export class SipCall {
       // const originator: string = data.originator;
       // const reason: string = data.cause;
       if(this._inputMediaStream) {
-        this._mediaEngine.closeStream(this._inputMediaStream);
+        this._mediaEngine.closeStream(this.getId());
         this._setInputMediaStream(null);
       }
       if(this._outputMediaStream) {
-        this._mediaEngine.closeStream(this._outputMediaStream);
+        this._mediaEngine.closeStream(this.getId());
         this._outputMediaStream = null;
       }
       if (this._localVideoEl) {
@@ -1126,11 +1125,11 @@ export class SipCall {
       const originator = data.originator;
       const reason = data.cause;
       if(this._inputMediaStream) {
-        this._mediaEngine.closeStream(this._inputMediaStream);
+        this._mediaEngine.closeStream(this.getId());
         this._setInputMediaStream(null);
       }
       if(this._outputMediaStream) {
-        this._mediaEngine.closeStream(this._outputMediaStream);
+        this._mediaEngine.closeStream(this.getId());
         this._outputMediaStream = null;
       }
       if (this._localVideoEl) {
@@ -1246,7 +1245,6 @@ export class SipCall {
     });
     rtcSession!.on('sdp', (data) => {
       this._logger.debug('RTCSession "sdp" event received', data)
-      // TODO Implement SDP modification logic if required
       // tslint:disable-next-line:no-console
       console.log("ON session SDP event");
       const { originator, type, sdp } = data;
@@ -1272,6 +1270,42 @@ export class SipCall {
     });
     rtcSession!.on('icecandidate', (data) => {
       this._logger.debug('RTCSession "icecandidate" event received', data)
+    });
+  };
+  _mediaEventHandler = (): void => {
+    this._eventEmitter.on('audio.input.update', (event) => {
+      // tslint:disable-next-line:no-console
+      console.log(`On audio.input.update event for callid: ${event.reqId}`);
+      // handle input update
+      if (event.reqId === this.getId()) {
+        // update the streams
+        const mediaStream = event.stream;
+        const peerConn = this._peerConnection;
+        mediaStream.getAudioTracks().forEach((track) => {
+          peerConn?.getSenders().forEach((sender) => {
+            if (sender.track && sender.track.kind === 'audio') {
+              sender.replaceTrack(track);
+            }
+          });
+        });
+      }
+    });
+    this._eventEmitter.on('audio.output.update', (event) => {
+      // handle output update
+    });
+    this._eventEmitter.on('video.input.update', (event) => {
+      if (event.reqId === this.getId()) {
+        // update the streams
+        const mediaStream = event.stream;
+        const peerConn = this._peerConnection;
+        mediaStream.getVideoTracks().forEach((track) => {
+          peerConn?.getSenders().forEach((sender) => {
+            if (sender.track && sender.track.kind === 'video') {
+              sender.replaceTrack(track);
+            }
+          });
+        });
+      }
     });
   };
 }

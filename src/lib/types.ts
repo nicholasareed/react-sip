@@ -87,6 +87,12 @@ export const callInfoListPropType = PropTypes.arrayOf(PropTypes.shape({
   _errorReason: PropTypes.string,
 }));
 
+export const mediaDeviceListPropType = PropTypes.arrayOf(PropTypes.shape({
+  deviceId: PropTypes.string,
+  kind: PropTypes.string,
+  label: PropTypes.string
+}));
+
 export interface DtmfOptions {
   duration: number,
   interToneGap: number,
