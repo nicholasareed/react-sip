@@ -1,5 +1,6 @@
 import { WebAudioHTMLMediaElement } from "..";
 
+import * as EventEmitter from 'eventemitter3';
 import * as FILES from '../sounds.json';
 
 const TONES = new Map([
@@ -7,56 +8,71 @@ const TONES = new Map([
   [ 'ringing', { audio: new Audio(FILES['ringing']), volume: 1.0 } ],
   [ 'answered', { audio: new Audio(FILES['answered']), volume: 1.0 } ],
   [ 'rejected', { audio: new Audio(FILES['rejected']), volume: 1.0 } ],
+  [ 'ended', { audio: new Audio(FILES['rejected']), volume: 1.0 } ],
 ]);
 
 export interface AudioConfig {
-  enabled: boolean,
-  deviceIds: string[],
-  element: WebAudioHTMLMediaElement | null,
+  enabled: boolean;
+  deviceIds: string[];
+  element: WebAudioHTMLMediaElement | null;
 }
 export interface VideoConfig {
-  enabled: boolean,
-  deviceIds: string[],
-  element: HTMLMediaElement | null,
+  enabled: boolean;
+  deviceIds: string[];
+  element: HTMLMediaElement | null;
 }
 export interface MediaEngineConfig {
   audio: {
     in: AudioConfig,
-    out: AudioConfig,
-  },
+    out: AudioConfig
+  };
   video: {
     in: VideoConfig,
-    out: VideoConfig,
-  },
+    out: VideoConfig
+  };
 }
 export interface MediaDevice {
-  deviceId: string,
-  label: string,
+  deviceId: string;
+  kind: string;
+  label: string;
 }
-export interface AudioStreamContext {
-  id: string,
-  rawStream: MediaStream, // feed to source audio node
-  srcNode: AudioNode,
-  destNode: AudioNode,
-  gainNode: GainNode
+export interface InputStreamContext {
+  id: string;
+  hasVideo: boolean;
+  srcNode: MediaStreamAudioSourceNode;
+  destNode: MediaStreamAudioDestinationNode;
+  gainNode: GainNode;
+  rawStream: MediaStream; // feed to source audio node
+  amplStream: MediaStream;
+}
+export interface OutputStreamContext {
+  id: string;
+  stream: MediaStream;
+  volume: number;
 }
 export class MediaEngine {
   _config: MediaEngineConfig | null;
-  _availableDevices: MediaDeviceInfo[];
-  _openedStreams: MediaStream[];
+  _availableDevices: MediaDevice[];
   _outputVolume: number;
+  _inputVolume: number;
+  _ringVolume: number;
   _audioContext: AudioContext;
-  _streamContexts: AudioStreamContext[];
+  _inStreamContexts: InputStreamContext[];
+  _outStreamContexts: OutputStreamContext[];
   _isPlaying: boolean;
   _supportedDeviceTypes: string[];
+  _eventEmitter: EventEmitter;
 
-  constructor(config: MediaEngineConfig | null) {
+  constructor(config: MediaEngineConfig | null, eventEmitter: EventEmitter) {
     this._isPlaying = false;
     this._availableDevices = [];
-    this._openedStreams = [];
-    this._streamContexts = [];
+    this._inStreamContexts = [];
+    this._outStreamContexts = [];
     this._supportedDeviceTypes = ['audioinput', 'audiooutput', 'videoinput'];
-    this._outputVolume = 1;
+    this._outputVolume = 0.8;  // default 80%
+    this._inputVolume = 1; // 100 %
+    this._ringVolume = 0.8;
+    this._eventEmitter = eventEmitter;
     this._prepareConfig(config);
     this._initDevices();
   }
@@ -66,21 +82,22 @@ export class MediaEngine {
     const result: MediaDevice[] = [];
     this._availableDevices.forEach((device) => {
       if (device.kind === deviceKind) {
-        const tmpDevice: MediaDevice = {
-          deviceId: device.deviceId,
-          label: device.label,
-        };
-        result.push(tmpDevice);
+        result.push(device);
       }
     });
     return result;
+  };
+
+  fetchAllDevices = (): MediaDevice[] => {
+    return this._availableDevices;
   };
 
   reConfigure = (config: MediaEngineConfig): void => {
     this._prepareConfig(config);
   };
   // Open
-  openStreams = async (audio: boolean,
+  openStreams = async (reqId: string,
+                       audio: boolean,
                        video: boolean): Promise<MediaStream | null> => {
     // tslint:disable-next-line:no-console
     console.log(this._availableDevices);
@@ -93,7 +110,7 @@ export class MediaEngine {
       const gainNode = this._audioContext.createGain(); // per input stream ??
       audioSource.connect(gainNode);
       gainNode.connect(audioDest);
-      gainNode.gain.value = 0.8 * 2;  // 80%
+      gainNode.gain.value = this._inputVolume * 2;
       const inputStream = audioDest.stream;
       // clone the tracks to another stream
       const newStream = new MediaStream();
@@ -116,82 +133,104 @@ export class MediaEngine {
         });
       }
 
-      this._openedStreams.push(newStream);
-      this._streamContexts.push({
-        id: newStream.id,
-        rawStream: mediaStream,
+      this._inStreamContexts.push({
+        id: reqId,
+        hasVideo: video,
         srcNode: audioSource,
         destNode: audioDest,
-        gainNode
+        gainNode,
+        rawStream: mediaStream,
+        amplStream: newStream
       });
       return Promise.resolve(newStream);
     });
   };
-
-  updateStream = (appStream: MediaStream | null,
+  // update stream with audio/video
+  // use case: adding video
+  updateStream = (reqId: string,
                   audio: boolean,
                   video: boolean): Promise<MediaStream | null> => {
-    if (appStream === null) {
-      appStream = new MediaStream();
-    }
-    const opts = this._getMediaConstraints(audio, video);
-    return navigator.mediaDevices.getUserMedia(opts).then((mediaStream) => {
-      mediaStream.getTracks().forEach((track) => {
-        const exists = appStream!.getTracks().find((t) => t.kind === track.kind);
-        if (exists !== undefined) {
-          appStream!.removeTrack(track);
-        }
-        appStream!.addTrack(track);
+    const index = this._inStreamContexts.findIndex((ctxt) => ctxt.id === reqId);
+    if (index !== -1) {
+      const streamContext = this._inStreamContexts[index];
+      const appStream = streamContext.amplStream;
+      streamContext.hasVideo = video;
+      if (audio) {
+        appStream.getAudioTracks().forEach((track) => {
+          track.enabled = false;
+          track.stop();
+          appStream.removeTrack(track);
+        });
+      }
+      if (video) {
+        appStream.getVideoTracks().forEach((track) => {
+          track.enabled = false;
+          track.stop();
+          appStream.removeTrack(track);
+        });
+      }
+      const opts = this._getMediaConstraints(audio, video);
+      return navigator.mediaDevices.getUserMedia(opts).then((mediaStream) => {
+        // currently update is used to add video
+        // Video tracks are not routed through Gain Node
+        // TODO: if audio is added
+        mediaStream.getTracks().forEach((track) => {
+          appStream!.addTrack(track);
+        });
+        return Promise.resolve(appStream);
       });
-      return Promise.resolve(appStream);
-    });
+    }
+    return Promise.resolve(null);
   };
-  closeStream = (mediaStream: MediaStream): void => {
-    mediaStream.getTracks().forEach((track) => {
-      track.enabled = false;
-      track.stop();
-      mediaStream.removeTrack(track);
-    });
-    const ctxtIndex = this._streamContexts.findIndex(
-      (item) => item.id === mediaStream.id);
-    if (ctxtIndex !== -1) {
-      const streamContext = this._streamContexts[ctxtIndex];
+  closeStream = (reqId: string): void => {
+    const index = this._inStreamContexts.findIndex((item) => item.id === reqId);
+    if (index !== -1) {
+      const streamContext = this._inStreamContexts[index];
+      const mediaStream = streamContext.amplStream;
+
       streamContext.gainNode.disconnect();
       streamContext.srcNode.disconnect();
       streamContext.destNode.disconnect();
+      mediaStream.getTracks().forEach((track) => {
+        track.enabled = false;
+        track.stop();
+        mediaStream.removeTrack(track);
+      });
       streamContext.rawStream.getTracks().forEach((track) => {
         track.enabled = false;
         track.stop();
       });
-      this._streamContexts.splice(ctxtIndex, 1);
+      this._inStreamContexts.splice(index, 1);
     }
-    const index = this._openedStreams.findIndex((item) => item.id === mediaStream.id);
-    if (index !== -1) {
-      this._openedStreams.splice(index, 1);
+
+    // out stream context
+    const outIndex = this._outStreamContexts.findIndex(
+      (item) => item.id === reqId);
+    if (outIndex !== -1) {
+      this._outStreamContexts.splice(outIndex, 1);
     }
   };
   closeAll = () => {
     // close all opened streams
-    this._openedStreams.forEach((mediaStream) => {
-      mediaStream.getTracks().forEach((track) => {
-        track.enabled = false;
-        track.stop();
-      })
-    });
-    this._openedStreams = [];
-    this._streamContexts.forEach((streamContext) => {
+    this._inStreamContexts.forEach((streamContext) => {
       streamContext.gainNode.disconnect();
       streamContext.srcNode.disconnect();
       streamContext.destNode.disconnect();
+      streamContext.amplStream.getTracks().forEach((track) => {
+        track.enabled = false;
+        track.stop();
+      });
       streamContext.rawStream.getTracks().forEach((track) => {
         track.enabled = false;
         track.stop();
       });
     });
-    this._streamContexts = [];
+    this._inStreamContexts = [];
+    this._outStreamContexts = [];
     this._isPlaying = false;
   };
-  startOrUpdateOutStreams = (mediaStream: MediaStream | null,
+  startOrUpdateOutStreams = (reqId: string,
+                             mediaStream: MediaStream | null,
                              track: MediaStreamTrack,
                              audioElement: HTMLMediaElement | null,
                              videoElement: HTMLMediaElement | null): void => {
@@ -201,9 +240,7 @@ export class MediaEngine {
         audioOut.element = audioElement as WebAudioHTMLMediaElement;
         audioOut.element!.setSinkId(audioOut.deviceIds[0]);
         audioOut.element!.autoplay = true;
-      }
-      if (videoElement) {
-        this._config!.video['out'].element = videoElement;
+        audioOut.element.volume = this._outputVolume;
       }
       this._isPlaying = true;
     }
@@ -246,8 +283,29 @@ export class MediaEngine {
           })
          */
       }
+      const outContext = this._outStreamContexts.find((item) => item.id === reqId);
+      // new context
+      if (outContext === undefined) {
+        if (track.kind === 'audio') {
+          let vol = this._outputVolume;
+          if (!this._outStreamContexts.length && element) {
+            element.volume = this._outputVolume;
+          } else {
+            vol = this._outStreamContexts[0].volume;
+          }
+          this._outStreamContexts.push({
+            id: reqId,
+            stream: mediaStream,
+            volume: vol
+          });
+        }
+      } else {
+        if (outContext.stream.id !== mediaStream.id) {
+          outContext.stream = mediaStream;
+        }
+      }
     }
-  }
+  };
   muteAudio = (): void => {
     this._enableAudioChannels(false);
   };
@@ -255,7 +313,7 @@ export class MediaEngine {
     this._enableAudioChannels(true);
   };
   // TODO: Implement playing tones
-  playTone = (name: string, volume: number=1.0): void => {
+  playTone = (name: string, volume: number=1.0, continuous: boolean=true): void => {
     // play tone to the output device
     if (volume === undefined) {
       volume = 1.0
@@ -267,7 +325,8 @@ export class MediaEngine {
     toneRes.audio.pause();
     toneRes.audio.currentTime = 0.0;
     toneRes.audio.volume = (toneRes.volume || 1.0) * volume;
-    toneRes.audio.loop = true;
+    toneRes.audio.loop = continuous;
+    toneRes.audio.volume = this._ringVolume;
     toneRes.audio.play()
       .catch((err) => {
         // log the error
@@ -282,25 +341,44 @@ export class MediaEngine {
     toneRes.audio.currentTime = 0.0;
   };
   // change output volume
+  // used only for initial volume
   changeOutputVolume = (vol: number): void => {
     if (vol > 1) {
       vol = 1;
     }
-    const value = vol;
-    if (this._isPlaying) {
+    this._outputVolume = vol;
+  };
+  changeInputVolume = (vol: number): void => {
+    if (vol > 1) {
+      vol = 1;
+    } else if (vol < 0) {
+      vol = 0;
+    }
+    this._inputVolume = vol;
+  }
+  changeOutStreamVolume = (reqId: string, value: number): void => {
+    if (value > 1) {
+      value = 1;
+    }
+    const streamCtxt = this._outStreamContexts.find((item) => item.id === reqId);
+    if (streamCtxt !== undefined) {
       const audioElement = this._config?.audio.out.element;
       audioElement!.volume = value;
+      // currently volume is set on the element
+      // not using audio nodes
+      this._outStreamContexts.forEach((ctxt) => {
+        ctxt.volume = value;
+      });
     }
-    this._outputVolume = value;
   };
   // change input volume
-  changeStreamVolume = (mediaStream: MediaStream, vol: number): void => {
+  changeInStreamVolume = (reqId: string, vol: number): void => {
     if (vol>1) {
       vol = 1;
     }
     const value = vol * 2;
-    const streamContext = this._streamContexts.find(
-      (item) => item.id === mediaStream.id);
+    const streamContext = this._inStreamContexts.find(
+      (item) => item.id === reqId);
     if (streamContext !== undefined) {
       streamContext.gainNode.gain.value = value;
     }
@@ -308,9 +386,25 @@ export class MediaEngine {
   getOutputVolume = (): number => {
     return this._outputVolume;
   };
-  getStreamVolume = (mediaStream: MediaStream): number => {
-    const streamContext = this._streamContexts.find(
-      (item) => item.id === mediaStream.id);
+  getInputVolume = (): number => {
+    return this._inputVolume;
+  };
+  changeRingVolume = (vol: number): void => {
+    this._ringVolume = vol;
+  };
+  getRingVolume = (): number => {
+    return this._ringVolume;
+  };
+  getOutStreamVolume = (reqId: string): number => {
+    const ctxt = this._outStreamContexts.find((item) => item.id === reqId);
+    if (ctxt !== undefined) {
+      return ctxt.volume;
+    }
+    return 0.8;
+  };
+  getInStreamVolume = (reqId: string): number => {
+    const streamContext = this._inStreamContexts.find(
+      (item) => item.id === reqId);
     if (streamContext !== undefined) {
       const value = streamContext.gainNode.gain.value;
       return (value * 0.5);
@@ -322,21 +416,161 @@ export class MediaEngine {
     if (!isValid) {
       throw Error("UnSupported Device Kind");
     }
-    let deviceInfo = this._availableDevices.find((device) => device.kind === deviceKind);
-    if (deviceInfo && deviceInfo !== undefined) {
-      if(deviceId) {
-        deviceInfo = this._availableDevices.find((device) =>
-          device.kind === deviceKind && device.deviceId === deviceId);
-        if(deviceInfo === undefined) {
-          return false
-        }
+    if (deviceId) {
+      const index = this._availableDevices.findIndex((item) =>
+        item.kind === deviceKind && item.deviceId === deviceId);
+      if (index !== -1) {
+        return true;
       }
-      return true;
+      return false;
+    } else {
+      // device exists for the device kind
+      const index = this._availableDevices.findIndex((item) =>
+        item.kind === deviceKind );
+      if (index !== -1) {
+        return true;
+      }
+      return false;
     }
-    return false;
   };
-  changeDevice = async (deviceKind: string, deviceId: string): Promise<any> => {
+  changeAudioInput = (deviceId: string): void => {
+    // check device
+    if (!this.hasDeviceExists('audioinput', deviceId)) {
+      throw Error(`audioinput device with id ${deviceId} not found`);
+    }
+    this._changeDeviceConfig('audioinput', deviceId);
+    this._inStreamContexts.forEach((ctxt) => {
+      const reqId = ctxt.id;
+      const rawStream = ctxt.rawStream;
+      const amplStream = ctxt.amplStream;
+      rawStream.getAudioTracks().forEach((track) => {
+        track.enabled = false;
+        track.stop();
+        rawStream.removeTrack(track);
+      });
+      amplStream.getAudioTracks().forEach((track) => {
+        track.enabled = false;
+        track.stop();
+        amplStream.removeTrack(track);
+      });
+      const currGain = ctxt.gainNode.gain.value;
+      ctxt.srcNode.disconnect();
+      ctxt.destNode.disconnect();
+      ctxt.gainNode.disconnect();
+
+      const opts = this._getMediaConstraints(true, false);
+      navigator.mediaDevices.getUserMedia(opts).then((mediaStream) => {
+        mediaStream.getAudioTracks().forEach((track) => {
+          ctxt.rawStream.addTrack(track);
+        })
+        ctxt.srcNode = this._audioContext.createMediaStreamSource(ctxt.rawStream);
+        ctxt.destNode = this._audioContext.createMediaStreamDestination();
+        ctxt.gainNode = this._audioContext.createGain(); // per input stream ??
+        ctxt.srcNode.connect(ctxt.gainNode);
+        ctxt.gainNode.connect(ctxt.destNode);
+        ctxt.gainNode.gain.value = currGain;
+
+        ctxt.destNode.stream.getAudioTracks().forEach((track) => {
+          ctxt.amplStream.addTrack(track);
+        });
+      }).then(() => {
+        this._eventEmitter.emit('audio.input.update', {'reqId': reqId, 'stream': ctxt.amplStream});
+      });
+    });
+  };
+  changeAudioOutput = (deviceId: string): void => {
+    if (!this.hasDeviceExists('audiooutput', deviceId)) {
+      throw Error(`audiooutput device with id ${deviceId} not found`);
+    }
+    this._changeDeviceConfig('audiooutput', deviceId);
+    if (this._config) {
+      const configAudioOutput = this._config.audio.out;
+      configAudioOutput.element!.setSinkId(configAudioOutput.deviceIds[0]);
+      configAudioOutput.element!.autoplay = true;
+    }
+  };
+  changeVideoInput = (deviceId: string): void => {
+    if (!this.hasDeviceExists('videoinput', deviceId)) {
+      throw Error(`videoinput device with id ${deviceId} not found`);
+    }
+    this._changeDeviceConfig('videoinput', deviceId);
+    this._inStreamContexts.forEach((ctxt) => {
+      const reqId = ctxt.id;
+      const amplStream = ctxt.amplStream;
+      amplStream.getVideoTracks().forEach((track) => {
+        track.enabled = false;
+        track.stop();
+        amplStream.removeTrack(track);
+      });
+      const opts = this._getMediaConstraints(false, true);
+      navigator.mediaDevices.getUserMedia(opts).then((mediaStream) => {
+        mediaStream.getVideoTracks().forEach((track) => {
+          ctxt.amplStream.addTrack(track);
+        })
+      }).then(() => {
+        this._eventEmitter.emit('video.input.update', {'reqId': reqId, 'stream': ctxt.amplStream});
+      });
+    });
+  };
+  getConfiguredDevice = (deviceKind: string): string => {
+    let deviceId = 'default';
+    switch (deviceKind) {
+      case 'audioinput':
+        if (this._config!.audio.in.deviceIds.length > 0) {
+          deviceId = this._config!.audio.in.deviceIds[0];
+        }
+        break;
+      case 'audiooutput':
+        if (this._config!.audio.out.deviceIds.length > 0) {
+          deviceId = this._config!.audio.out.deviceIds[0];
+        }
+        break;
+      case 'videoinput':
+        if (this._config!.video.in.deviceIds.length > 0) {
+          deviceId = this._config!.video.in.deviceIds[0];
+        }
+        break;
+    }
+    return deviceId;
+  };
+  _changeDeviceConfig = (deviceKind: string, deviceId: string): void => {
     // TO DO change out & in device
+    switch (deviceKind) {
+      case 'audioinput':
+        // @ts-ignore
+        this._config.audio.in.deviceIds[0] = deviceId;
+        break;
+      case 'audiooutput':
+        // @ts-ignore
+        this._config.audio.out.deviceIds[0] = deviceId;
+        break;
+      case 'videoinput':
+        // @ts-ignore
+        this._config.video.in.deviceIds[0] = deviceId;
+        break;
+    }
+  };
+  _flushDeviceConfig = (deviceKind:string, deviceId:string): void => {
+    switch (deviceKind) {
+      case 'audioinput':
+        if (this._config!.audio.in.deviceIds.length > 0 &&
+            this._config!.audio.in.deviceIds[0] === deviceId) {
+          this._config!.audio.in.deviceIds = [];
+        }
+        break;
+      case 'audiooutput':
+        if (this._config!.audio.out.deviceIds.length > 0 &&
+          this._config!.audio.out.deviceIds[0] === deviceId) {
+          this._config!.audio.out.deviceIds = [];
+        }
+        break;
+      case 'videoinput':
+        if (this._config!.video.in.deviceIds.length > 0 &&
+          this._config!.video.in.deviceIds[0] === deviceId) {
+          this._config!.video.in.deviceIds = [];
+        }
+        break;
+    }
   };
   _prepareConfig(config: MediaEngineConfig | null) {
     if (!config) {
@@ -369,8 +603,9 @@ export class MediaEngine {
       };
       const audioOut = this._config.audio.out;
       audioOut.element = window.document.createElement('audio') as WebAudioHTMLMediaElement;
-      audioOut.element!.setSinkId(audioOut.deviceIds[0]);
+      audioOut.element.setSinkId(audioOut.deviceIds[0]);
       audioOut.element.autoplay = true;
+      audioOut.element.volume = this._outputVolume;
     } else {
       let deviceId: string | null = null;
       if (config.audio.in.enabled) {
@@ -400,15 +635,6 @@ export class MediaEngine {
       Object.assign(this._config, config);
     }
   }
-  _startInputStreams = (mediaStream: MediaStream): MediaStream => {
-    const newStream = new MediaStream();
-
-    mediaStream.getTracks().forEach((track) => {
-      newStream.addTrack(track.clone());
-    })
-    this._openedStreams.push(newStream);
-    return newStream;
-  };
   // NOTE: Only input device is muted.
   _enableAudioChannels = (isEnable: boolean): void => {
     if (!this._isAudioEnabled()) {
@@ -457,11 +683,30 @@ export class MediaEngine {
           } else {
             oldList.splice(index, 1);
           }
-          this._availableDevices.push(device);
+          let label = device.label;
+          const defStr = 'default -';
+          const commStr = 'communications -';
+          if (device.label.toLowerCase().startsWith(defStr)) {
+            label = device.label.substring(defStr.length);
+            label = label.trim();
+          } else if (device.label.toLowerCase().startsWith(commStr)) {
+            label = device.label.substring(commStr.length);
+            label = label.trim()
+          }
+          const exists = this._availableDevices.find((item) =>
+            item.label.toLowerCase() === label.toLowerCase() && item.kind === device.kind);
+          if (exists === undefined) {
+            this._availableDevices.push({
+              deviceId: device.deviceId,
+              kind: device.kind,
+              label
+            });
+          }
         });
-        // tslint:disable-next-line:no-console
-        console.log(oldList);
-
+        oldList.forEach((item) => {
+          this._flushDeviceConfig(item.kind, item.deviceId);
+        });
+        this._eventEmitter.emit('media.device.update', {});
       })
       .catch((err) => {
         // log error
@@ -473,8 +718,6 @@ export class MediaEngine {
     this._audioContext = new AudioContext();
     this._refreshDevices();
     navigator.mediaDevices.ondevicechange = (event) => {
-      // tslint:disable-next-line:no-console
-      console.log(`On media device change`);
       this._refreshDevices();
     };
   };
