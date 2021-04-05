@@ -306,7 +306,6 @@ export class SipCall {
         }
         break;
     }
-
     return disp;
   };
   changeOutputVolume = (vol: number): void => {
@@ -651,10 +650,10 @@ export class SipCall {
       this.getRTCSession()!.renegotiate(options);
     });
   }
-  changeMicVolume = (vol: number): void => {
+  changeInputVolume = (vol: number): void => {
     this._mediaEngine.changeInStreamVolume(this.getId(), vol);
   };
-  getMicVolume = (): number => {
+  getInputVolume = (): number => {
     return this._mediaEngine.getInStreamVolume(this.getId());
   };
   renegotiate = (): boolean => {

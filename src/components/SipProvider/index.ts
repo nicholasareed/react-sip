@@ -701,7 +701,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     // MEDIA DEVICES
     eventBus.on('media.device.update', (event) => {
       // tslint:disable-next-line:no-console
-      console.log('MEDIA DEVICE UPDATE');
+      // console.log('MEDIA DEVICE UPDATE');
       const mediaDevices = this._mediaEngine.fetchAllDevices();
       this.setState({ mediaDevices });
     });
