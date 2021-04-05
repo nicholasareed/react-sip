@@ -652,7 +652,10 @@ export class SipCall {
     });
   }
   changeMicVolume = (vol: number): void => {
-    this._mediaEngine.changeInputVolume(this.getId(), vol);
+    this._mediaEngine.changeInStreamVolume(this.getId(), vol);
+  };
+  getMicVolume = (): number => {
+    return this._mediaEngine.getInStreamVolume(this.getId());
   };
   renegotiate = (): boolean => {
     if (!this.isSessionActive()) {

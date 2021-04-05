@@ -87,9 +87,12 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     // media
     playTone: PropTypes.func,
     stopTone: PropTypes.func,
-    setSpeakerVolume: PropTypes.func,
-    getSpeakerVolume: PropTypes.func,
+    setSpeakerVolume: PropTypes.func, // initial speaker volume
+    getSpeakerVolume: PropTypes.func, // initial speaker volume
+    setMicVolume: PropTypes.func,
+    getMicVolume: PropTypes.func,
     setRingVolume: PropTypes.func,
+    getRingVolume: PropTypes.func,
     changeAudioInput: PropTypes.func,
     changeAudioOutput: PropTypes.func,
     changeVideoInput: PropTypes.func,
@@ -195,6 +198,10 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       stopTone: this.stopTone.bind(this),
       setSpeakerVolume: this.setSpeakerVolume.bind(this),
       getSpeakerVolume: this.getSpeakerVolume.bind(this),
+      setMicVolume: this.setMicVolume.bind(this),
+      getMicVolume: this.getMicVolume.bind(this),
+      setRingVolume: this.setRingVolume.bind(this),
+      getRingVolume: this.getRingVolume.bind(this),
       changeAudioInput: this.changeAudioInput.bind(this),
       changeAudioOutput: this.changeAudioOutput.bind(this),
       changeVideoInput: this.changeVideoInput.bind(this),
@@ -299,17 +306,6 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       this._mediaEngine.closeAll();
     }
   }
-  getActiveCall = (): SipCall | undefined => {
-    const { callList } = this.state;
-    const activeCall = callList.find((item) => item.isMediaActive() === true);
-    return activeCall;
-  };
-  getLastCall = (): SipCall | undefined => {
-    const { callList } = this.state;
-    if (callList.length > 0) {
-      return callList[callList.length - 1];
-    }
-  };
   isLineConnected = (): boolean => {
     return this.state.lineStatus === LINE_STATUS_CONNECTED;
   };
@@ -439,17 +435,29 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
 
     return sipCall.getId();
   };
-  playTone = (tone: string) => {
+  playTone = (tone: string): void => {
     this._mediaEngine.playTone(tone);
   };
-  stopTone = (tone: string) => {
+  stopTone = (tone: string): void => {
     this._mediaEngine.stopTone(tone);
   };
-  setSpeakerVolume = (vol: number) => {
+  setSpeakerVolume = (vol: number): void => {
     this._mediaEngine.changeOutputVolume(vol);
   };
-  getSpeakerVolume = () => {
+  getSpeakerVolume = (): number => {
     return this._mediaEngine.getOutputVolume();
+  };
+  setMicVolume = (vol: number): void => {
+    this._mediaEngine.changeInputVolume(vol);
+  };
+  getMicVolume = (vol: number): number => {
+    return this._mediaEngine.getInputVolume();
+  };
+  setRingVolume = (vol: number): void => {
+    this._mediaEngine.changeRingVolume(vol);
+  };
+  getRingVolume = (): number => {
+    return this._mediaEngine.getRingVolume();
   };
   changeAudioInput = (deviceId: string): void => {
     this._mediaEngine.changeAudioInput(deviceId);

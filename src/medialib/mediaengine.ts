@@ -54,6 +54,8 @@ export class MediaEngine {
   _config: MediaEngineConfig | null;
   _availableDevices: MediaDevice[];
   _outputVolume: number;
+  _inputVolume: number;
+  _ringVolume: number;
   _audioContext: AudioContext;
   _inStreamContexts: InputStreamContext[];
   _outStreamContexts: OutputStreamContext[];
@@ -68,6 +70,8 @@ export class MediaEngine {
     this._outStreamContexts = [];
     this._supportedDeviceTypes = ['audioinput', 'audiooutput', 'videoinput'];
     this._outputVolume = 0.8;  // default 80%
+    this._inputVolume = 1; // 100 %
+    this._ringVolume = 0.8;
     this._eventEmitter = eventEmitter;
     this._prepareConfig(config);
     this._initDevices();
@@ -106,7 +110,7 @@ export class MediaEngine {
       const gainNode = this._audioContext.createGain(); // per input stream ??
       audioSource.connect(gainNode);
       gainNode.connect(audioDest);
-      gainNode.gain.value = 0.8 * 2;  // 80%
+      gainNode.gain.value = this._inputVolume * 2;
       const inputStream = audioDest.stream;
       // clone the tracks to another stream
       const newStream = new MediaStream();
@@ -322,6 +326,7 @@ export class MediaEngine {
     toneRes.audio.currentTime = 0.0;
     toneRes.audio.volume = (toneRes.volume || 1.0) * volume;
     toneRes.audio.loop = continuous;
+    toneRes.audio.volume = this._ringVolume;
     toneRes.audio.play()
       .catch((err) => {
         // log the error
@@ -343,6 +348,14 @@ export class MediaEngine {
     }
     this._outputVolume = vol;
   };
+  changeInputVolume = (vol: number): void => {
+    if (vol > 1) {
+      vol = 1;
+    } else if (vol < 0) {
+      vol = 0;
+    }
+    this._inputVolume = vol;
+  }
   changeOutStreamVolume = (reqId: string, value: number): void => {
     if (value > 1) {
       value = 1;
@@ -359,7 +372,7 @@ export class MediaEngine {
     }
   };
   // change input volume
-  changeInputVolume = (reqId: string, vol: number): void => {
+  changeInStreamVolume = (reqId: string, vol: number): void => {
     if (vol>1) {
       vol = 1;
     }
@@ -373,6 +386,15 @@ export class MediaEngine {
   getOutputVolume = (): number => {
     return this._outputVolume;
   };
+  getInputVolume = (): number => {
+    return this._inputVolume;
+  };
+  changeRingVolume = (vol: number): void => {
+    this._ringVolume = vol;
+  };
+  getRingVolume = (): number => {
+    return this._ringVolume;
+  };
   getOutStreamVolume = (reqId: string): number => {
     const ctxt = this._outStreamContexts.find((item) => item.id === reqId);
     if (ctxt !== undefined) {
@@ -380,7 +402,7 @@ export class MediaEngine {
     }
     return 0.8;
   };
-  getInputVolume = (reqId: string): number => {
+  getInStreamVolume = (reqId: string): number => {
     const streamContext = this._inStreamContexts.find(
       (item) => item.id === reqId);
     if (streamContext !== undefined) {
