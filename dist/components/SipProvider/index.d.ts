@@ -2,6 +2,7 @@ import * as PropTypes from 'prop-types';
 import * as React from 'react';
 import * as JsSIP from 'jssip';
 import { UnRegisterOptions } from 'jssip/lib/UA';
+import { MediaDevice } from '../../medialib/mediaengine';
 import { SipExtraHeaders } from '../../siplib/sipua';
 import { DtmfOptions, SipCall, SipCallConfig } from '../../siplib/sipcall';
 import { LineStatus, SipStatus, SipErrorType } from '../../lib/enums';
@@ -34,6 +35,7 @@ export interface JsSipState {
     errorMessage: string;
     callList: SipCall[];
     callHistory: CallInfo[];
+    mediaDevices: MediaDevice[];
 }
 export default class SipProvider extends React.Component<JsSipConfig, JsSipState> {
     static childContextTypes: {
@@ -89,10 +91,21 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
         makeCall: PropTypes.Requireable<(...args: any[]) => any>;
         playTone: PropTypes.Requireable<(...args: any[]) => any>;
         stopTone: PropTypes.Requireable<(...args: any[]) => any>;
-        getMediaDevices: PropTypes.Requireable<(...args: any[]) => any>;
         setSpeakerVolume: PropTypes.Requireable<(...args: any[]) => any>;
         getSpeakerVolume: PropTypes.Requireable<(...args: any[]) => any>;
+        setMicVolume: PropTypes.Requireable<(...args: any[]) => any>;
+        getMicVolume: PropTypes.Requireable<(...args: any[]) => any>;
         setRingVolume: PropTypes.Requireable<(...args: any[]) => any>;
+        getRingVolume: PropTypes.Requireable<(...args: any[]) => any>;
+        changeAudioInput: PropTypes.Requireable<(...args: any[]) => any>;
+        changeAudioOutput: PropTypes.Requireable<(...args: any[]) => any>;
+        changeVideoInput: PropTypes.Requireable<(...args: any[]) => any>;
+        mediaDevices: PropTypes.Requireable<(PropTypes.InferProps<{
+            deviceId: PropTypes.Requireable<string>;
+            kind: PropTypes.Requireable<string>;
+            label: PropTypes.Requireable<string>;
+        }> | null | undefined)[]>;
+        getPreferredDevice: PropTypes.Requireable<(...args: any[]) => any>;
     };
     static propTypes: {
         socket: PropTypes.Requireable<string>;
@@ -189,7 +202,15 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
         stopTone: any;
         setSpeakerVolume: any;
         getSpeakerVolume: any;
-        getMediaDevices: any;
+        setMicVolume: any;
+        getMicVolume: any;
+        setRingVolume: any;
+        getRingVolume: any;
+        changeAudioInput: any;
+        changeAudioOutput: any;
+        changeVideoInput: any;
+        mediaDevices: MediaDevice[];
+        getPreferredDevice: any;
     };
     _initProperties: () => void;
     _getCallConfig: () => SipCallConfig;
@@ -200,8 +221,6 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     componentDidMount(): void;
     componentDidUpdate(prevProps: any): void;
     componentWillUnmount(): void;
-    getActiveCall: () => SipCall | undefined;
-    getLastCall: () => SipCall | undefined;
     isLineConnected: () => boolean;
     isRegistered: () => boolean;
     hasError: () => boolean;
@@ -215,7 +234,14 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     stopTone: (tone: string) => void;
     setSpeakerVolume: (vol: number) => void;
     getSpeakerVolume: () => number;
-    getMediaDevices: (deviceKind: MediaDeviceKind) => import("../../medialib/mediaengine").MediaDevice[];
+    setMicVolume: (vol: number) => void;
+    getMicVolume: (vol: number) => number;
+    setRingVolume: (vol: number) => void;
+    getRingVolume: () => number;
+    changeAudioInput: (deviceId: string) => void;
+    changeAudioOutput: (deviceId: string) => void;
+    changeVideoInput: (deviceId: string) => void;
+    getPreferredDevice: (deviceKind: string) => string;
     _terminateAll: () => void;
     _reconfigureDebug(): void;
     _reinitializeJsSIP(): Promise<void>;

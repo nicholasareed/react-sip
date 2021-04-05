@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.callInfoListPropType = exports.callHistoryPropType = exports.sipPropType = exports.iceServersPropType = exports.extraHeadersPropType = void 0;
+exports.mediaDeviceListPropType = exports.callInfoListPropType = exports.callHistoryPropType = exports.sipPropType = exports.iceServersPropType = exports.extraHeadersPropType = void 0;
 var PropTypes = require("prop-types");
 exports.extraHeadersPropType = PropTypes.objectOf(PropTypes.arrayOf(PropTypes.string));
 exports.iceServersPropType = PropTypes.arrayOf(PropTypes.object);
@@ -44,5 +44,10 @@ exports.callInfoListPropType = PropTypes.arrayOf(PropTypes.shape({
     _endTime: PropTypes.string,
     _endMode: PropTypes.string,
     _errorReason: PropTypes.string,
+}));
+exports.mediaDeviceListPropType = PropTypes.arrayOf(PropTypes.shape({
+    deviceId: PropTypes.string,
+    kind: PropTypes.string,
+    label: PropTypes.string
 }));
 //# sourceMappingURL=types.js.map

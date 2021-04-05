@@ -64,6 +64,11 @@ export declare const callInfoListPropType: PropTypes.Requireable<(PropTypes.Infe
     _endMode: PropTypes.Requireable<string>;
     _errorReason: PropTypes.Requireable<string>;
 }> | null | undefined)[]>;
+export declare const mediaDeviceListPropType: PropTypes.Requireable<(PropTypes.InferProps<{
+    deviceId: PropTypes.Requireable<string>;
+    kind: PropTypes.Requireable<string>;
+    label: PropTypes.Requireable<string>;
+}> | null | undefined)[]>;
 export interface DtmfOptions {
     duration: number;
     interToneGap: number;

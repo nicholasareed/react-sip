@@ -97,6 +97,8 @@ export declare class SipCall {
     errorReason: () => string;
     isFailed: () => boolean;
     getDisposition: () => string;
+    changeOutputVolume: (vol: number) => void;
+    getOutputVolume: () => number;
     _setInputMediaStream: (stream: MediaStream | null) => void;
     _configureDebug: () => void;
     _uuid: () => string;
@@ -112,7 +114,8 @@ export declare class SipCall {
     isOnLocalHold: () => boolean;
     isOnRemoteHold: () => boolean;
     offerVideo: (localVideoEl: HTMLMediaElement | null) => void;
-    changeMicVolume: (vol: number) => void;
+    changeInputVolume: (vol: number) => void;
+    getInputVolume: () => number;
     renegotiate: () => boolean;
     _mute: (isAudio?: boolean) => void;
     _unmute: (isAudio?: boolean) => void;
@@ -136,4 +139,5 @@ export declare class SipCall {
     _handleRemoteOffer: (sdp: string) => void;
     _handleRemoteAnswer: (sdp: string) => void;
     _initSessionEventHandler: () => void;
+    _mediaEventHandler: () => void;
 }

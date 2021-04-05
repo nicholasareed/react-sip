@@ -163,6 +163,13 @@ var SipCall = (function () {
             }
             return disp;
         };
+        this.changeOutputVolume = function (vol) {
+            _this._mediaEngine.changeOutStreamVolume(_this.getId(), vol);
+            _this._eventEmitter.emit('call.update', { 'call': _this });
+        };
+        this.getOutputVolume = function () {
+            return _this._mediaEngine.getOutStreamVolume(_this.getId());
+        };
         this._setInputMediaStream = function (stream) {
             _this._inputMediaStream = stream;
         };
@@ -191,7 +198,7 @@ var SipCall = (function () {
                 _this._localVideoEl = localVideoEl;
                 _this._remoteVideoEl = remoteVideoEl;
             }
-            _this._mediaEngine.openStreams(hasAudio, hasVideo).then(function (stream) {
+            _this._mediaEngine.openStreams(_this.getId(), hasAudio, hasVideo).then(function (stream) {
                 if (!stream) {
                     throw Error('Failed to open the input streams');
                 }
@@ -238,7 +245,7 @@ var SipCall = (function () {
             }
             _this._localVideoEl = localVideoEl;
             _this._remoteVideoEl = remoteVideoEl;
-            _this._mediaEngine.openStreams(hasAudio, hasVideo).then(function (inputStream) {
+            _this._mediaEngine.openStreams(_this.getId(), hasAudio, hasVideo).then(function (inputStream) {
                 if (hasVideo && localVideoEl) {
                     localVideoEl.srcObject = inputStream;
                 }
@@ -291,14 +298,11 @@ var SipCall = (function () {
                 extraHeaders: _this.getExtraHeaders().nonInvite,
             };
             _this.getRTCSession().terminate(options);
-            var inputStream = _this.getInputMediaStream();
-            if (inputStream) {
-                _this._mediaEngine.closeStream(inputStream);
-                _this._setInputMediaStream(null);
-                if (_this._localVideoEl) {
-                    _this._localVideoEl.srcObject = null;
-                    _this._localVideoEl = null;
-                }
+            _this._mediaEngine.closeStream(_this.getId());
+            _this._setInputMediaStream(null);
+            if (_this._localVideoEl) {
+                _this._localVideoEl.srcObject = null;
+                _this._localVideoEl = null;
             }
             if (_this.getCallStatus() === __1.CALL_STATUS_PROGRESS) {
                 _this._mediaEngine.stopTone('ringback');
@@ -428,7 +432,7 @@ var SipCall = (function () {
             }
             var videoTransceiver = transceivers[1];
             videoTransceiver === null || videoTransceiver === void 0 ? void 0 : videoTransceiver.direction = 'sendrecv';
-            _this._mediaEngine.updateStream(_this._inputMediaStream, false, true).then(function (stream) {
+            _this._mediaEngine.updateStream(_this.getId(), false, true).then(function (stream) {
                 if (!stream) {
                     throw Error('Failed to update the input streams in offerVideo');
                 }
@@ -453,11 +457,11 @@ var SipCall = (function () {
                 _this.getRTCSession().renegotiate(options);
             });
         };
-        this.changeMicVolume = function (vol) {
-            var mediaStream = _this._inputMediaStream;
-            if (mediaStream) {
-                _this._mediaEngine.changeStreamVolume(mediaStream, vol);
-            }
+        this.changeInputVolume = function (vol) {
+            _this._mediaEngine.changeInStreamVolume(_this.getId(), vol);
+        };
+        this.getInputVolume = function () {
+            return _this._mediaEngine.getInStreamVolume(_this.getId());
         };
         this.renegotiate = function () {
             if (!_this.isSessionActive()) {
@@ -638,7 +642,7 @@ var SipCall = (function () {
             _this._transferStatus = __1.TRANSFER_STATUS_FAILED;
         };
         this._handleRemoteTrack = function (track) {
-            _this._mediaEngine.startOrUpdateOutStreams(_this._outputMediaStream, track, null, _this._remoteVideoEl);
+            _this._mediaEngine.startOrUpdateOutStreams(_this.getId(), _this._outputMediaStream, track, null, _this._remoteVideoEl);
         };
         this._handleLocalSdp = function (sdp) {
             var sdpObj = sdpTransform.parse(sdp);
@@ -739,6 +743,7 @@ var SipCall = (function () {
                     console.log('ON track event');
                     _this._logger.debug('PeerConnection "ontrack" event received');
                     _this._handleRemoteTrack(event.track);
+                    _this._eventEmitter.emit('call.update', { 'call': _this });
                     event.track.addEventListener('unmute', function (ev) {
                         console.log('Received track unmute event');
                     });
@@ -761,6 +766,7 @@ var SipCall = (function () {
                     console.log('ON track event');
                     _this._logger.debug('PeerConnection "ontrack" event received');
                     _this._handleRemoteTrack(event.track);
+                    _this._eventEmitter.emit('call.update', { 'call': _this });
                 });
             });
             rtcSession.on('connecting', function (data) {
@@ -799,14 +805,9 @@ var SipCall = (function () {
             rtcSession.on('ended', function (data) {
                 console.log('ON session ended event');
                 _this._logger.debug('RTCSession "ended" event received', data);
-                if (_this._inputMediaStream) {
-                    _this._mediaEngine.closeStream(_this._inputMediaStream);
-                    _this._setInputMediaStream(null);
-                }
-                if (_this._outputMediaStream) {
-                    _this._mediaEngine.closeStream(_this._outputMediaStream);
-                    _this._outputMediaStream = null;
-                }
+                _this._mediaEngine.closeStream(_this.getId());
+                _this._setInputMediaStream(null);
+                _this._outputMediaStream = null;
                 if (_this._localVideoEl) {
                     _this._localVideoEl.srcObject = null;
                     _this._localVideoEl = null;
@@ -834,14 +835,9 @@ var SipCall = (function () {
                 _this._logger.debug('RTCSession "failed" event received', data);
                 var originator = data.originator;
                 var reason = data.cause;
-                if (_this._inputMediaStream) {
-                    _this._mediaEngine.closeStream(_this._inputMediaStream);
-                    _this._setInputMediaStream(null);
-                }
-                if (_this._outputMediaStream) {
-                    _this._mediaEngine.closeStream(_this._outputMediaStream);
-                    _this._outputMediaStream = null;
-                }
+                _this._mediaEngine.closeStream(_this.getId());
+                _this._setInputMediaStream(null);
+                _this._outputMediaStream = null;
                 if (_this._localVideoEl) {
                     _this._localVideoEl.srcObject = null;
                     _this._localVideoEl = null;
@@ -974,6 +970,38 @@ var SipCall = (function () {
                 _this._logger.debug('RTCSession "icecandidate" event received', data);
             });
         };
+        this._mediaEventHandler = function () {
+            _this._eventEmitter.on('audio.input.update', function (event) {
+                console.log("On audio.input.update event for callid: " + event.reqId);
+                if (event.reqId === _this.getId()) {
+                    var mediaStream = event.stream;
+                    var peerConn_1 = _this._peerConnection;
+                    mediaStream.getAudioTracks().forEach(function (track) {
+                        peerConn_1 === null || peerConn_1 === void 0 ? void 0 : peerConn_1.getSenders().forEach(function (sender) {
+                            if (sender.track && sender.track.kind === 'audio') {
+                                sender.replaceTrack(track);
+                            }
+                        });
+                    });
+                }
+            });
+            _this._eventEmitter.on('audio.output.update', function (event) {
+            });
+            _this._eventEmitter.on('video.input.update', function (event) {
+                if (event.reqId === _this.getId()) {
+                    var mediaStream = event.stream;
+                    var peerConn_2 = _this._peerConnection;
+                    mediaStream.getVideoTracks().forEach(function (track) {
+                        peerConn_2 === null || peerConn_2 === void 0 ? void 0 : peerConn_2.getSenders().forEach(function (sender) {
+                            if (sender.track && sender.track.kind === 'video') {
+                                sender.replaceTrack(track);
+                            }
+                        });
+                    });
+                }
+            });
+        };
+        this._debug = true;
         this._rtcSession = null;
         this._callConfig = callConfig;
         this._rtcConfig = rtcConfig;
@@ -999,6 +1027,7 @@ var SipCall = (function () {
         this._audioCodecs = ['G722', 'PCMA', 'PCMU', 'telephone-event', 'CN'];
         this._videoCodecs = ['H264'];
         this._init(isIncoming);
+        this._mediaEventHandler();
     }
     return SipCall;
 }());

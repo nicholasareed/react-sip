@@ -43,27 +43,27 @@ var TONES = new Map([
     ['ringing', { audio: new Audio(FILES['ringing']), volume: 1.0 }],
     ['answered', { audio: new Audio(FILES['answered']), volume: 1.0 }],
     ['rejected', { audio: new Audio(FILES['rejected']), volume: 1.0 }],
+    ['ended', { audio: new Audio(FILES['rejected']), volume: 1.0 }],
 ]);
 var MediaEngine = (function () {
-    function MediaEngine(config) {
+    function MediaEngine(config, eventEmitter) {
         var _this = this;
         this.availableDevices = function (deviceKind) {
             var result = [];
             _this._availableDevices.forEach(function (device) {
                 if (device.kind === deviceKind) {
-                    var tmpDevice = {
-                        deviceId: device.deviceId,
-                        label: device.label,
-                    };
-                    result.push(tmpDevice);
+                    result.push(device);
                 }
             });
             return result;
         };
+        this.fetchAllDevices = function () {
+            return _this._availableDevices;
+        };
         this.reConfigure = function (config) {
             _this._prepareConfig(config);
         };
-        this.openStreams = function (audio, video) { return __awaiter(_this, void 0, void 0, function () {
+        this.openStreams = function (reqId, audio, video) { return __awaiter(_this, void 0, void 0, function () {
             var opts;
             var _this = this;
             return __generator(this, function (_a) {
@@ -75,7 +75,7 @@ var MediaEngine = (function () {
                         var gainNode = _this._audioContext.createGain();
                         audioSource.connect(gainNode);
                         gainNode.connect(audioDest);
-                        gainNode.gain.value = 0.8 * 2;
+                        gainNode.gain.value = _this._inputVolume * 2;
                         var inputStream = audioDest.stream;
                         var newStream = new MediaStream();
                         inputStream.getTracks().forEach(function (track) {
@@ -86,87 +86,99 @@ var MediaEngine = (function () {
                                 newStream.addTrack(track);
                             });
                         }
-                        _this._openedStreams.push(newStream);
-                        _this._streamContexts.push({
-                            id: newStream.id,
-                            rawStream: mediaStream,
+                        _this._inStreamContexts.push({
+                            id: reqId,
+                            hasVideo: video,
                             srcNode: audioSource,
                             destNode: audioDest,
-                            gainNode: gainNode
+                            gainNode: gainNode,
+                            rawStream: mediaStream,
+                            amplStream: newStream
                         });
                         return Promise.resolve(newStream);
                     })];
             });
         }); };
-        this.updateStream = function (appStream, audio, video) {
-            if (appStream === null) {
-                appStream = new MediaStream();
-            }
-            var opts = _this._getMediaConstraints(audio, video);
-            return navigator.mediaDevices.getUserMedia(opts).then(function (mediaStream) {
-                mediaStream.getTracks().forEach(function (track) {
-                    var exists = appStream.getTracks().find(function (t) { return t.kind === track.kind; });
-                    if (exists !== undefined) {
-                        appStream.removeTrack(track);
-                    }
-                    appStream.addTrack(track);
+        this.updateStream = function (reqId, audio, video) {
+            var index = _this._inStreamContexts.findIndex(function (ctxt) { return ctxt.id === reqId; });
+            if (index !== -1) {
+                var streamContext = _this._inStreamContexts[index];
+                var appStream_1 = streamContext.amplStream;
+                streamContext.hasVideo = video;
+                if (audio) {
+                    appStream_1.getAudioTracks().forEach(function (track) {
+                        track.enabled = false;
+                        track.stop();
+                        appStream_1.removeTrack(track);
+                    });
+                }
+                if (video) {
+                    appStream_1.getVideoTracks().forEach(function (track) {
+                        track.enabled = false;
+                        track.stop();
+                        appStream_1.removeTrack(track);
+                    });
+                }
+                var opts = _this._getMediaConstraints(audio, video);
+                return navigator.mediaDevices.getUserMedia(opts).then(function (mediaStream) {
+                    mediaStream.getTracks().forEach(function (track) {
+                        appStream_1.addTrack(track);
+                    });
+                    return Promise.resolve(appStream_1);
                 });
-                return Promise.resolve(appStream);
-            });
+            }
+            return Promise.resolve(null);
         };
-        this.closeStream = function (mediaStream) {
-            mediaStream.getTracks().forEach(function (track) {
-                track.enabled = false;
-                track.stop();
-                mediaStream.removeTrack(track);
-            });
-            var ctxtIndex = _this._streamContexts.findIndex(function (item) { return item.id === mediaStream.id; });
-            if (ctxtIndex !== -1) {
-                var streamContext = _this._streamContexts[ctxtIndex];
+        this.closeStream = function (reqId) {
+            var index = _this._inStreamContexts.findIndex(function (item) { return item.id === reqId; });
+            if (index !== -1) {
+                var streamContext = _this._inStreamContexts[index];
+                var mediaStream_1 = streamContext.amplStream;
                 streamContext.gainNode.disconnect();
                 streamContext.srcNode.disconnect();
                 streamContext.destNode.disconnect();
+                mediaStream_1.getTracks().forEach(function (track) {
+                    track.enabled = false;
+                    track.stop();
+                    mediaStream_1.removeTrack(track);
+                });
                 streamContext.rawStream.getTracks().forEach(function (track) {
                     track.enabled = false;
                     track.stop();
                 });
-                _this._streamContexts.splice(ctxtIndex, 1);
+                _this._inStreamContexts.splice(index, 1);
             }
-            var index = _this._openedStreams.findIndex(function (item) { return item.id === mediaStream.id; });
-            if (index !== -1) {
-                _this._openedStreams.splice(index, 1);
+            var outIndex = _this._outStreamContexts.findIndex(function (item) { return item.id === reqId; });
+            if (outIndex !== -1) {
+                _this._outStreamContexts.splice(outIndex, 1);
             }
         };
         this.closeAll = function () {
-            _this._openedStreams.forEach(function (mediaStream) {
-                mediaStream.getTracks().forEach(function (track) {
-                    track.enabled = false;
-                    track.stop();
-                });
-            });
-            _this._openedStreams = [];
-            _this._streamContexts.forEach(function (streamContext) {
+            _this._inStreamContexts.forEach(function (streamContext) {
                 streamContext.gainNode.disconnect();
                 streamContext.srcNode.disconnect();
                 streamContext.destNode.disconnect();
+                streamContext.amplStream.getTracks().forEach(function (track) {
+                    track.enabled = false;
+                    track.stop();
+                });
                 streamContext.rawStream.getTracks().forEach(function (track) {
                     track.enabled = false;
                     track.stop();
                 });
             });
-            _this._streamContexts = [];
+            _this._inStreamContexts = [];
+            _this._outStreamContexts = [];
             _this._isPlaying = false;
         };
-        this.startOrUpdateOutStreams = function (mediaStream, track, audioElement, videoElement) {
+        this.startOrUpdateOutStreams = function (reqId, mediaStream, track, audioElement, videoElement) {
             if (!_this._isPlaying) {
                 if (audioElement) {
                     var audioOut = _this._config.audio.out;
                     audioOut.element = audioElement;
                     audioOut.element.setSinkId(audioOut.deviceIds[0]);
                     audioOut.element.autoplay = true;
-                }
-                if (videoElement) {
-                    _this._config.video['out'].element = videoElement;
+                    audioOut.element.volume = _this._outputVolume;
                 }
                 _this._isPlaying = true;
             }
@@ -196,6 +208,28 @@ var MediaEngine = (function () {
                 if (element) {
                     element.srcObject = mediaStream;
                 }
+                var outContext = _this._outStreamContexts.find(function (item) { return item.id === reqId; });
+                if (outContext === undefined) {
+                    if (track.kind === 'audio') {
+                        var vol = _this._outputVolume;
+                        if (!_this._outStreamContexts.length && element) {
+                            element.volume = _this._outputVolume;
+                        }
+                        else {
+                            vol = _this._outStreamContexts[0].volume;
+                        }
+                        _this._outStreamContexts.push({
+                            id: reqId,
+                            stream: mediaStream,
+                            volume: vol
+                        });
+                    }
+                }
+                else {
+                    if (outContext.stream.id !== mediaStream.id) {
+                        outContext.stream = mediaStream;
+                    }
+                }
             }
         };
         this.muteAudio = function () {
@@ -204,8 +238,9 @@ var MediaEngine = (function () {
         this.unMuteAudio = function () {
             _this._enableAudioChannels(true);
         };
-        this.playTone = function (name, volume) {
+        this.playTone = function (name, volume, continuous) {
             if (volume === void 0) { volume = 1.0; }
+            if (continuous === void 0) { continuous = true; }
             if (volume === undefined) {
                 volume = 1.0;
             }
@@ -216,7 +251,8 @@ var MediaEngine = (function () {
             toneRes.audio.pause();
             toneRes.audio.currentTime = 0.0;
             toneRes.audio.volume = (toneRes.volume || 1.0) * volume;
-            toneRes.audio.loop = true;
+            toneRes.audio.loop = continuous;
+            toneRes.audio.volume = _this._ringVolume;
             toneRes.audio.play()
                 .catch(function (err) {
             });
@@ -230,23 +266,40 @@ var MediaEngine = (function () {
             toneRes.audio.currentTime = 0.0;
         };
         this.changeOutputVolume = function (vol) {
-            var _a;
             if (vol > 1) {
                 vol = 1;
             }
-            var value = vol;
-            if (_this._isPlaying) {
+            _this._outputVolume = vol;
+        };
+        this.changeInputVolume = function (vol) {
+            if (vol > 1) {
+                vol = 1;
+            }
+            else if (vol < 0) {
+                vol = 0;
+            }
+            _this._inputVolume = vol;
+        };
+        this.changeOutStreamVolume = function (reqId, value) {
+            var _a;
+            if (value > 1) {
+                value = 1;
+            }
+            var streamCtxt = _this._outStreamContexts.find(function (item) { return item.id === reqId; });
+            if (streamCtxt !== undefined) {
                 var audioElement = (_a = _this._config) === null || _a === void 0 ? void 0 : _a.audio.out.element;
                 audioElement.volume = value;
+                _this._outStreamContexts.forEach(function (ctxt) {
+                    ctxt.volume = value;
+                });
             }
-            _this._outputVolume = value;
         };
-        this.changeStreamVolume = function (mediaStream, vol) {
+        this.changeInStreamVolume = function (reqId, vol) {
             if (vol > 1) {
                 vol = 1;
             }
             var value = vol * 2;
-            var streamContext = _this._streamContexts.find(function (item) { return item.id === mediaStream.id; });
+            var streamContext = _this._inStreamContexts.find(function (item) { return item.id === reqId; });
             if (streamContext !== undefined) {
                 streamContext.gainNode.gain.value = value;
             }
@@ -254,8 +307,24 @@ var MediaEngine = (function () {
         this.getOutputVolume = function () {
             return _this._outputVolume;
         };
-        this.getStreamVolume = function (mediaStream) {
-            var streamContext = _this._streamContexts.find(function (item) { return item.id === mediaStream.id; });
+        this.getInputVolume = function () {
+            return _this._inputVolume;
+        };
+        this.changeRingVolume = function (vol) {
+            _this._ringVolume = vol;
+        };
+        this.getRingVolume = function () {
+            return _this._ringVolume;
+        };
+        this.getOutStreamVolume = function (reqId) {
+            var ctxt = _this._outStreamContexts.find(function (item) { return item.id === reqId; });
+            if (ctxt !== undefined) {
+                return ctxt.volume;
+            }
+            return 0.8;
+        };
+        this.getInStreamVolume = function (reqId) {
+            var streamContext = _this._inStreamContexts.find(function (item) { return item.id === reqId; });
             if (streamContext !== undefined) {
                 var value = streamContext.gainNode.gain.value;
                 return (value * 0.5);
@@ -267,32 +336,156 @@ var MediaEngine = (function () {
             if (!isValid) {
                 throw Error("UnSupported Device Kind");
             }
-            var deviceInfo = _this._availableDevices.find(function (device) { return device.kind === deviceKind; });
-            if (deviceInfo && deviceInfo !== undefined) {
-                if (deviceId) {
-                    deviceInfo = _this._availableDevices.find(function (device) {
-                        return device.kind === deviceKind && device.deviceId === deviceId;
-                    });
-                    if (deviceInfo === undefined) {
-                        return false;
-                    }
+            if (deviceId) {
+                var index = _this._availableDevices.findIndex(function (item) {
+                    return item.kind === deviceKind && item.deviceId === deviceId;
+                });
+                if (index !== -1) {
+                    return true;
                 }
-                return true;
+                return false;
             }
-            return false;
+            else {
+                var index = _this._availableDevices.findIndex(function (item) {
+                    return item.kind === deviceKind;
+                });
+                if (index !== -1) {
+                    return true;
+                }
+                return false;
+            }
         };
-        this.changeDevice = function (deviceKind, deviceId) { return __awaiter(_this, void 0, void 0, function () {
-            return __generator(this, function (_a) {
-                return [2];
+        this.changeAudioInput = function (deviceId) {
+            if (!_this.hasDeviceExists('audioinput', deviceId)) {
+                throw Error("audioinput device with id " + deviceId + " not found");
+            }
+            _this._changeDeviceConfig('audioinput', deviceId);
+            _this._inStreamContexts.forEach(function (ctxt) {
+                var reqId = ctxt.id;
+                var rawStream = ctxt.rawStream;
+                var amplStream = ctxt.amplStream;
+                rawStream.getAudioTracks().forEach(function (track) {
+                    track.enabled = false;
+                    track.stop();
+                    rawStream.removeTrack(track);
+                });
+                amplStream.getAudioTracks().forEach(function (track) {
+                    track.enabled = false;
+                    track.stop();
+                    amplStream.removeTrack(track);
+                });
+                var currGain = ctxt.gainNode.gain.value;
+                ctxt.srcNode.disconnect();
+                ctxt.destNode.disconnect();
+                ctxt.gainNode.disconnect();
+                var opts = _this._getMediaConstraints(true, false);
+                navigator.mediaDevices.getUserMedia(opts).then(function (mediaStream) {
+                    mediaStream.getAudioTracks().forEach(function (track) {
+                        ctxt.rawStream.addTrack(track);
+                    });
+                    ctxt.srcNode = _this._audioContext.createMediaStreamSource(ctxt.rawStream);
+                    ctxt.destNode = _this._audioContext.createMediaStreamDestination();
+                    ctxt.gainNode = _this._audioContext.createGain();
+                    ctxt.srcNode.connect(ctxt.gainNode);
+                    ctxt.gainNode.connect(ctxt.destNode);
+                    ctxt.gainNode.gain.value = currGain;
+                    ctxt.destNode.stream.getAudioTracks().forEach(function (track) {
+                        ctxt.amplStream.addTrack(track);
+                    });
+                }).then(function () {
+                    _this._eventEmitter.emit('audio.input.update', { 'reqId': reqId, 'stream': ctxt.amplStream });
+                });
             });
-        }); };
-        this._startInputStreams = function (mediaStream) {
-            var newStream = new MediaStream();
-            mediaStream.getTracks().forEach(function (track) {
-                newStream.addTrack(track.clone());
+        };
+        this.changeAudioOutput = function (deviceId) {
+            if (!_this.hasDeviceExists('audiooutput', deviceId)) {
+                throw Error("audiooutput device with id " + deviceId + " not found");
+            }
+            _this._changeDeviceConfig('audiooutput', deviceId);
+            if (_this._config) {
+                var configAudioOutput = _this._config.audio.out;
+                configAudioOutput.element.setSinkId(configAudioOutput.deviceIds[0]);
+                configAudioOutput.element.autoplay = true;
+            }
+        };
+        this.changeVideoInput = function (deviceId) {
+            if (!_this.hasDeviceExists('videoinput', deviceId)) {
+                throw Error("videoinput device with id " + deviceId + " not found");
+            }
+            _this._changeDeviceConfig('videoinput', deviceId);
+            _this._inStreamContexts.forEach(function (ctxt) {
+                var reqId = ctxt.id;
+                var amplStream = ctxt.amplStream;
+                amplStream.getVideoTracks().forEach(function (track) {
+                    track.enabled = false;
+                    track.stop();
+                    amplStream.removeTrack(track);
+                });
+                var opts = _this._getMediaConstraints(false, true);
+                navigator.mediaDevices.getUserMedia(opts).then(function (mediaStream) {
+                    mediaStream.getVideoTracks().forEach(function (track) {
+                        ctxt.amplStream.addTrack(track);
+                    });
+                }).then(function () {
+                    _this._eventEmitter.emit('video.input.update', { 'reqId': reqId, 'stream': ctxt.amplStream });
+                });
             });
-            _this._openedStreams.push(newStream);
-            return newStream;
+        };
+        this.getConfiguredDevice = function (deviceKind) {
+            var deviceId = 'default';
+            switch (deviceKind) {
+                case 'audioinput':
+                    if (_this._config.audio.in.deviceIds.length > 0) {
+                        deviceId = _this._config.audio.in.deviceIds[0];
+                    }
+                    break;
+                case 'audiooutput':
+                    if (_this._config.audio.out.deviceIds.length > 0) {
+                        deviceId = _this._config.audio.out.deviceIds[0];
+                    }
+                    break;
+                case 'videoinput':
+                    if (_this._config.video.in.deviceIds.length > 0) {
+                        deviceId = _this._config.video.in.deviceIds[0];
+                    }
+                    break;
+            }
+            return deviceId;
+        };
+        this._changeDeviceConfig = function (deviceKind, deviceId) {
+            switch (deviceKind) {
+                case 'audioinput':
+                    _this._config.audio.in.deviceIds[0] = deviceId;
+                    break;
+                case 'audiooutput':
+                    _this._config.audio.out.deviceIds[0] = deviceId;
+                    break;
+                case 'videoinput':
+                    _this._config.video.in.deviceIds[0] = deviceId;
+                    break;
+            }
+        };
+        this._flushDeviceConfig = function (deviceKind, deviceId) {
+            switch (deviceKind) {
+                case 'audioinput':
+                    if (_this._config.audio.in.deviceIds.length > 0 &&
+                        _this._config.audio.in.deviceIds[0] === deviceId) {
+                        _this._config.audio.in.deviceIds = [];
+                    }
+                    break;
+                case 'audiooutput':
+                    if (_this._config.audio.out.deviceIds.length > 0 &&
+                        _this._config.audio.out.deviceIds[0] === deviceId) {
+                        _this._config.audio.out.deviceIds = [];
+                    }
+                    break;
+                case 'videoinput':
+                    if (_this._config.video.in.deviceIds.length > 0 &&
+                        _this._config.video.in.deviceIds[0] === deviceId) {
+                        _this._config.video.in.deviceIds = [];
+                    }
+                    break;
+            }
         };
         this._enableAudioChannels = function (isEnable) {
             if (!_this._isAudioEnabled()) {
@@ -338,9 +531,32 @@ var MediaEngine = (function () {
                     else {
                         oldList.splice(index, 1);
                     }
-                    _this._availableDevices.push(device);
+                    var label = device.label;
+                    var defStr = 'default -';
+                    var commStr = 'communications -';
+                    if (device.label.toLowerCase().startsWith(defStr)) {
+                        label = device.label.substring(defStr.length);
+                        label = label.trim();
+                    }
+                    else if (device.label.toLowerCase().startsWith(commStr)) {
+                        label = device.label.substring(commStr.length);
+                        label = label.trim();
+                    }
+                    var exists = _this._availableDevices.find(function (item) {
+                        return item.label.toLowerCase() === label.toLowerCase() && item.kind === device.kind;
+                    });
+                    if (exists === undefined) {
+                        _this._availableDevices.push({
+                            deviceId: device.deviceId,
+                            kind: device.kind,
+                            label: label
+                        });
+                    }
                 });
-                console.log(oldList);
+                oldList.forEach(function (item) {
+                    _this._flushDeviceConfig(item.kind, item.deviceId);
+                });
+                _this._eventEmitter.emit('media.device.update', {});
             })
                 .catch(function (err) {
                 console.log("Enumerate devices error " + err.cause);
@@ -350,7 +566,6 @@ var MediaEngine = (function () {
             _this._audioContext = new AudioContext();
             _this._refreshDevices();
             navigator.mediaDevices.ondevicechange = function (event) {
-                console.log("On media device change");
                 _this._refreshDevices();
             };
         };
@@ -390,10 +605,13 @@ var MediaEngine = (function () {
         };
         this._isPlaying = false;
         this._availableDevices = [];
-        this._openedStreams = [];
-        this._streamContexts = [];
+        this._inStreamContexts = [];
+        this._outStreamContexts = [];
         this._supportedDeviceTypes = ['audioinput', 'audiooutput', 'videoinput'];
-        this._outputVolume = 1;
+        this._outputVolume = 0.8;
+        this._inputVolume = 1;
+        this._ringVolume = 0.8;
+        this._eventEmitter = eventEmitter;
         this._prepareConfig(config);
         this._initDevices();
     }
@@ -429,6 +647,7 @@ var MediaEngine = (function () {
             audioOut.element = window.document.createElement('audio');
             audioOut.element.setSinkId(audioOut.deviceIds[0]);
             audioOut.element.autoplay = true;
+            audioOut.element.volume = this._outputVolume;
         }
         else {
             var deviceId = null;

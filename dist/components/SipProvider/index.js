@@ -102,7 +102,7 @@ var SipProvider = (function (_super) {
                 interToneGap: 500,
                 channelType: Constants_1.DTMF_TRANSPORT.RFC2833,
             };
-            _this._mediaEngine = new mediaengine_1.MediaEngine(null);
+            _this._mediaEngine = new mediaengine_1.MediaEngine(null, _this.eventBus);
         };
         _this._getCallConfig = function () {
             return _this._callConfig;
@@ -122,17 +122,6 @@ var SipProvider = (function (_super) {
                 throw new Error('JsSIP.UA not initialized');
             }
             return ua;
-        };
-        _this.getActiveCall = function () {
-            var callList = _this.state.callList;
-            var activeCall = callList.find(function (item) { return item.isMediaActive() === true; });
-            return activeCall;
-        };
-        _this.getLastCall = function () {
-            var callList = _this.state.callList;
-            if (callList.length > 0) {
-                return callList[callList.length - 1];
-            }
         };
         _this.isLineConnected = function () {
             return _this.state.lineStatus === enums_1.LINE_STATUS_CONNECTED;
@@ -180,7 +169,7 @@ var SipProvider = (function (_super) {
                 _endTime: call.endTime,
                 _endType: call._endType,
                 _errorReason: call._errorReason,
-                _additionalInfo: call._additionalInfo,
+                _additionalInfo: call._additionalInfo
             };
             var callHistory = __spreadArrays([callInfo], _this.state.callHistory);
             _this.setState({ callHistory: callHistory });
@@ -224,8 +213,29 @@ var SipProvider = (function (_super) {
         _this.getSpeakerVolume = function () {
             return _this._mediaEngine.getOutputVolume();
         };
-        _this.getMediaDevices = function (deviceKind) {
-            return _this._mediaEngine.availableDevices(deviceKind);
+        _this.setMicVolume = function (vol) {
+            _this._mediaEngine.changeInputVolume(vol);
+        };
+        _this.getMicVolume = function (vol) {
+            return _this._mediaEngine.getInputVolume();
+        };
+        _this.setRingVolume = function (vol) {
+            _this._mediaEngine.changeRingVolume(vol);
+        };
+        _this.getRingVolume = function () {
+            return _this._mediaEngine.getRingVolume();
+        };
+        _this.changeAudioInput = function (deviceId) {
+            _this._mediaEngine.changeAudioInput(deviceId);
+        };
+        _this.changeAudioOutput = function (deviceId) {
+            _this._mediaEngine.changeAudioOutput(deviceId);
+        };
+        _this.changeVideoInput = function (deviceId) {
+            _this._mediaEngine.changeVideoInput(deviceId);
+        };
+        _this.getPreferredDevice = function (deviceKind) {
+            return _this._mediaEngine.getConfiguredDevice(deviceKind);
         };
         _this._terminateAll = function () {
             if (!_this.ua) {
@@ -240,6 +250,7 @@ var SipProvider = (function (_super) {
             errorMessage: '',
             callList: [],
             callHistory: [],
+            mediaDevices: []
         };
         _this.ua = null;
         _this.eventBus = new EventEmitter();
@@ -261,7 +272,15 @@ var SipProvider = (function (_super) {
             stopTone: this.stopTone.bind(this),
             setSpeakerVolume: this.setSpeakerVolume.bind(this),
             getSpeakerVolume: this.getSpeakerVolume.bind(this),
-            getMediaDevices: this.getMediaDevices.bind(this)
+            setMicVolume: this.setMicVolume.bind(this),
+            getMicVolume: this.getMicVolume.bind(this),
+            setRingVolume: this.setRingVolume.bind(this),
+            getRingVolume: this.getRingVolume.bind(this),
+            changeAudioInput: this.changeAudioInput.bind(this),
+            changeAudioOutput: this.changeAudioOutput.bind(this),
+            changeVideoInput: this.changeVideoInput.bind(this),
+            mediaDevices: __spreadArrays(this.state.mediaDevices),
+            getPreferredDevice: this.getPreferredDevice.bind(this)
         };
     };
     SipProvider.prototype.componentDidMount = function () {
@@ -495,6 +514,10 @@ var SipProvider = (function (_super) {
                     }
                     console.log(callList);
                 });
+                eventBus.on('media.device.update', function (event) {
+                    var mediaDevices = _this._mediaEngine.fetchAllDevices();
+                    _this.setState({ mediaDevices: mediaDevices });
+                });
                 extraHeadersRegister = this.props.extraHeaders.register || [];
                 if (extraHeadersRegister.length) {
                     ua.registrator().setExtraHeaders(extraHeadersRegister);
@@ -520,10 +543,17 @@ var SipProvider = (function (_super) {
         makeCall: PropTypes.func,
         playTone: PropTypes.func,
         stopTone: PropTypes.func,
-        getMediaDevices: PropTypes.func,
         setSpeakerVolume: PropTypes.func,
         getSpeakerVolume: PropTypes.func,
+        setMicVolume: PropTypes.func,
+        getMicVolume: PropTypes.func,
         setRingVolume: PropTypes.func,
+        getRingVolume: PropTypes.func,
+        changeAudioInput: PropTypes.func,
+        changeAudioOutput: PropTypes.func,
+        changeVideoInput: PropTypes.func,
+        mediaDevices: types_1.mediaDeviceListPropType,
+        getPreferredDevice: PropTypes.func
     };
     SipProvider.propTypes = {
         socket: PropTypes.string,

@@ -1,4 +1,5 @@
 import { WebAudioHTMLMediaElement } from "..";
+import * as EventEmitter from 'eventemitter3';
 export interface AudioConfig {
     enabled: boolean;
     deviceIds: string[];
@@ -21,44 +22,66 @@ export interface MediaEngineConfig {
 }
 export interface MediaDevice {
     deviceId: string;
+    kind: string;
     label: string;
 }
-export interface AudioStreamContext {
+export interface InputStreamContext {
     id: string;
-    rawStream: MediaStream;
-    srcNode: AudioNode;
-    destNode: AudioNode;
+    hasVideo: boolean;
+    srcNode: MediaStreamAudioSourceNode;
+    destNode: MediaStreamAudioDestinationNode;
     gainNode: GainNode;
+    rawStream: MediaStream;
+    amplStream: MediaStream;
+}
+export interface OutputStreamContext {
+    id: string;
+    stream: MediaStream;
+    volume: number;
 }
 export declare class MediaEngine {
     _config: MediaEngineConfig | null;
-    _availableDevices: MediaDeviceInfo[];
-    _openedStreams: MediaStream[];
+    _availableDevices: MediaDevice[];
     _outputVolume: number;
+    _inputVolume: number;
+    _ringVolume: number;
     _audioContext: AudioContext;
-    _streamContexts: AudioStreamContext[];
+    _inStreamContexts: InputStreamContext[];
+    _outStreamContexts: OutputStreamContext[];
     _isPlaying: boolean;
     _supportedDeviceTypes: string[];
-    constructor(config: MediaEngineConfig | null);
+    _eventEmitter: EventEmitter;
+    constructor(config: MediaEngineConfig | null, eventEmitter: EventEmitter);
     availableDevices: (deviceKind: 'audioinput' | 'audiooutput' | 'videoinput') => MediaDevice[];
+    fetchAllDevices: () => MediaDevice[];
     reConfigure: (config: MediaEngineConfig) => void;
-    openStreams: (audio: boolean, video: boolean) => Promise<MediaStream | null>;
-    updateStream: (appStream: MediaStream | null, audio: boolean, video: boolean) => Promise<MediaStream | null>;
-    closeStream: (mediaStream: MediaStream) => void;
+    openStreams: (reqId: string, audio: boolean, video: boolean) => Promise<MediaStream | null>;
+    updateStream: (reqId: string, audio: boolean, video: boolean) => Promise<MediaStream | null>;
+    closeStream: (reqId: string) => void;
     closeAll: () => void;
-    startOrUpdateOutStreams: (mediaStream: MediaStream | null, track: MediaStreamTrack, audioElement: HTMLMediaElement | null, videoElement: HTMLMediaElement | null) => void;
+    startOrUpdateOutStreams: (reqId: string, mediaStream: MediaStream | null, track: MediaStreamTrack, audioElement: HTMLMediaElement | null, videoElement: HTMLMediaElement | null) => void;
     muteAudio: () => void;
     unMuteAudio: () => void;
-    playTone: (name: string, volume?: number) => void;
+    playTone: (name: string, volume?: number, continuous?: boolean) => void;
     stopTone: (name: string) => void;
     changeOutputVolume: (vol: number) => void;
-    changeStreamVolume: (mediaStream: MediaStream, vol: number) => void;
+    changeInputVolume: (vol: number) => void;
+    changeOutStreamVolume: (reqId: string, value: number) => void;
+    changeInStreamVolume: (reqId: string, vol: number) => void;
     getOutputVolume: () => number;
-    getStreamVolume: (mediaStream: MediaStream) => number;
+    getInputVolume: () => number;
+    changeRingVolume: (vol: number) => void;
+    getRingVolume: () => number;
+    getOutStreamVolume: (reqId: string) => number;
+    getInStreamVolume: (reqId: string) => number;
     hasDeviceExists: (deviceKind: string, deviceId: string | null) => boolean;
-    changeDevice: (deviceKind: string, deviceId: string) => Promise<any>;
+    changeAudioInput: (deviceId: string) => void;
+    changeAudioOutput: (deviceId: string) => void;
+    changeVideoInput: (deviceId: string) => void;
+    getConfiguredDevice: (deviceKind: string) => string;
+    _changeDeviceConfig: (deviceKind: string, deviceId: string) => void;
+    _flushDeviceConfig: (deviceKind: string, deviceId: string) => void;
     _prepareConfig(config: MediaEngineConfig | null): void;
-    _startInputStreams: (mediaStream: MediaStream) => MediaStream;
     _enableAudioChannels: (isEnable: boolean) => void;
     _isAudioEnabled: () => boolean;
     _isVideoEnabled: () => boolean;
