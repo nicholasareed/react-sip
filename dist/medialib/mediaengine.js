@@ -244,7 +244,7 @@ var MediaEngine = (function () {
             if (volume === undefined) {
                 volume = 1.0;
             }
-            var toneRes = TONES.get(name);
+            var toneRes = typeof name === 'object' ? name : TONES.get(name);
             if (!toneRes) {
                 return;
             }
@@ -256,9 +256,10 @@ var MediaEngine = (function () {
             toneRes.audio.play()
                 .catch(function (err) {
             });
+            return toneRes;
         };
         this.stopTone = function (name) {
-            var toneRes = TONES.get(name);
+            var toneRes = typeof name === 'object' ? name : TONES.get(name);
             if (!toneRes) {
                 return;
             }

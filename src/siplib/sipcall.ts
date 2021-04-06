@@ -43,6 +43,7 @@ import {MediaEngine} from "../medialib/mediaengine";
 export interface SipCallConfig {
   extraHeaders: SipExtraHeaders;
   sessionTimerExpires: number;
+  getSetting: any;
 }
 
 export interface DtmfOptions {
@@ -105,15 +106,18 @@ export class SipCall {
   _modifySdp: boolean;  // flag to denote SDP needs to be modified
   _audioCodecs: string[]; // audio codecs for the call
   _videoCodecs: string[]; // video codecs for the call
+  _tones: any;
   // instance access
   startTime: string | undefined;
   endTime: string | undefined;
   remoteUri: string;
   remoteName: string;
+  remoteIdentity: any;
   remoteUser: string;
 
   constructor(isIncoming: boolean,
               remoteName: string,
+              remoteIdentity: any,
               callConfig: SipCallConfig,
               rtcConfig: RTCConfiguration,
               dtmfOptions: DtmfOptions,
@@ -127,6 +131,7 @@ export class SipCall {
     this._dtmfOptions = dtmfOptions;
     this._mediaEngine = mediaEngine;
     this._eventEmitter = eventEmitter;
+    this.remoteIdentity = remoteIdentity;
     this.remoteName = remoteName;
     this.remoteUri = '';
     this._endType = 'none';
@@ -146,6 +151,7 @@ export class SipCall {
     this._modifySdp = false;
     this._audioCodecs = ['G722', 'PCMA', 'PCMU', 'telephone-event', 'CN'];
     this._videoCodecs = ['H264'];
+    this._tones = {};
     this._init(isIncoming);
     this._mediaEventHandler();
   }
@@ -154,8 +160,10 @@ export class SipCall {
     if (isIncoming === true) {
       this.setCallStatus(CALL_STATUS_RINGING);
       this._direction = CALL_DIRECTION_INCOMING;
-      // tmp: move playing tone to app
-      this._mediaEngine.playTone('ringing', 1.0);
+      const toneNameOrObj = this._callConfig.getSetting?.('call-ringing-tone', {
+        call: this
+      }, ()=>'ringing') ?? 'ringing'
+      this._tones['ringing'] = this._mediaEngine.playTone(toneNameOrObj, 1.0);
     } else {
       this.remoteUser = this.remoteName;
       this.setCallStatus(CALL_STATUS_DIALING);
@@ -423,7 +431,7 @@ export class SipCall {
       this.getRTCSession()!.answer(options);
       this.setCallStatus(CALL_STATUS_CONNECTING);
       this._setInputMediaStream(inputStream);
-      this._mediaEngine.stopTone('ringing');
+      this._mediaEngine.stopTone(this._tones['ringing'] || 'ringing');
     });
   };
   // REJECT incoming call
@@ -444,7 +452,7 @@ export class SipCall {
       reason_phrase: reason,
     };
     this.getRTCSession()!.terminate(options);
-    this._mediaEngine.stopTone('ringing');
+    this._mediaEngine.stopTone(this._tones['ringing'] || 'ringing');
   };
 
   // HANGUP
@@ -1114,7 +1122,7 @@ export class SipCall {
       }
       this._endType = 'hangup';
       if (this.getCallStatus() === CALL_STATUS_RINGING) {
-        this._mediaEngine.stopTone('ringing');
+        this._mediaEngine.stopTone(this._tones['ringing'] || 'ringing');
       } else if(this.getCallStatus() === CALL_STATUS_PROGRESS) {
         this._mediaEngine.stopTone('ringback');
       }
@@ -1140,7 +1148,7 @@ export class SipCall {
         this._remoteVideoEl = null;
       }
       if (this.getCallStatus() === CALL_STATUS_RINGING) {
-        this._mediaEngine.stopTone('ringing');
+        this._mediaEngine.stopTone(this._tones['ringing'] || 'ringing');
       } else if(this.getCallStatus() === CALL_STATUS_PROGRESS) {
         this._mediaEngine.stopTone('ringback');
       }

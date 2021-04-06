@@ -9,6 +9,7 @@ import { MediaEngine } from "../medialib/mediaengine";
 export interface SipCallConfig {
     extraHeaders: SipExtraHeaders;
     sessionTimerExpires: number;
+    getSetting: any;
 }
 export interface DtmfOptions {
     duration: number;
@@ -62,12 +63,14 @@ export declare class SipCall {
     _modifySdp: boolean;
     _audioCodecs: string[];
     _videoCodecs: string[];
+    _tones: any;
     startTime: string | undefined;
     endTime: string | undefined;
     remoteUri: string;
     remoteName: string;
+    remoteIdentity: any;
     remoteUser: string;
-    constructor(isIncoming: boolean, remoteName: string, callConfig: SipCallConfig, rtcConfig: RTCConfiguration, dtmfOptions: DtmfOptions, mediaEngine: MediaEngine, eventEmitter: EventEmitter, additionalInfo: object);
+    constructor(isIncoming: boolean, remoteName: string, remoteIdentity: any, callConfig: SipCallConfig, rtcConfig: RTCConfiguration, dtmfOptions: DtmfOptions, mediaEngine: MediaEngine, eventEmitter: EventEmitter, additionalInfo: object);
     _init: (isIncoming: boolean) => void;
     getId: () => string;
     getAdditionalInfo: () => object;

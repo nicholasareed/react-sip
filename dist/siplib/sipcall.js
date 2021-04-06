@@ -6,13 +6,17 @@ var sdpTransform = require("sdp-transform");
 var dummyLogger_1 = require("../lib/dummyLogger");
 var __1 = require("..");
 var SipCall = (function () {
-    function SipCall(isIncoming, remoteName, callConfig, rtcConfig, dtmfOptions, mediaEngine, eventEmitter, additionalInfo) {
+    function SipCall(isIncoming, remoteName, remoteIdentity, callConfig, rtcConfig, dtmfOptions, mediaEngine, eventEmitter, additionalInfo) {
         var _this = this;
         this._init = function (isIncoming) {
+            var _a, _b, _c;
             if (isIncoming === true) {
                 _this.setCallStatus(__1.CALL_STATUS_RINGING);
                 _this._direction = __1.CALL_DIRECTION_INCOMING;
-                _this._mediaEngine.playTone('ringing', 1.0);
+                var toneNameOrObj = (_c = (_b = (_a = _this._callConfig).getSetting) === null || _b === void 0 ? void 0 : _b.call(_a, 'call-ringing-tone', {
+                    call: _this
+                }, function () { return 'ringing'; })) !== null && _c !== void 0 ? _c : 'ringing';
+                _this._tones['ringing'] = _this._mediaEngine.playTone(toneNameOrObj, 1.0);
             }
             else {
                 _this.remoteUser = _this.remoteName;
@@ -263,7 +267,7 @@ var SipCall = (function () {
                 _this.getRTCSession().answer(options);
                 _this.setCallStatus(__1.CALL_STATUS_CONNECTING);
                 _this._setInputMediaStream(inputStream);
-                _this._mediaEngine.stopTone('ringing');
+                _this._mediaEngine.stopTone(_this._tones['ringing'] || 'ringing');
             });
         };
         this.reject = function (code, reason) {
@@ -282,7 +286,7 @@ var SipCall = (function () {
                 reason_phrase: reason,
             };
             _this.getRTCSession().terminate(options);
-            _this._mediaEngine.stopTone('ringing');
+            _this._mediaEngine.stopTone(_this._tones['ringing'] || 'ringing');
         };
         this.hangup = function () {
             if (!_this.isSessionActive()) {
@@ -821,7 +825,7 @@ var SipCall = (function () {
                 }
                 _this._endType = 'hangup';
                 if (_this.getCallStatus() === __1.CALL_STATUS_RINGING) {
-                    _this._mediaEngine.stopTone('ringing');
+                    _this._mediaEngine.stopTone(_this._tones['ringing'] || 'ringing');
                 }
                 else if (_this.getCallStatus() === __1.CALL_STATUS_PROGRESS) {
                     _this._mediaEngine.stopTone('ringback');
@@ -847,7 +851,7 @@ var SipCall = (function () {
                     _this._remoteVideoEl = null;
                 }
                 if (_this.getCallStatus() === __1.CALL_STATUS_RINGING) {
-                    _this._mediaEngine.stopTone('ringing');
+                    _this._mediaEngine.stopTone(_this._tones['ringing'] || 'ringing');
                 }
                 else if (_this.getCallStatus() === __1.CALL_STATUS_PROGRESS) {
                     _this._mediaEngine.stopTone('ringback');
@@ -1008,6 +1012,7 @@ var SipCall = (function () {
         this._dtmfOptions = dtmfOptions;
         this._mediaEngine = mediaEngine;
         this._eventEmitter = eventEmitter;
+        this.remoteIdentity = remoteIdentity;
         this.remoteName = remoteName;
         this.remoteUri = '';
         this._endType = 'none';
@@ -1026,6 +1031,7 @@ var SipCall = (function () {
         this._modifySdp = false;
         this._audioCodecs = ['G722', 'PCMA', 'PCMU', 'telephone-event', 'CN'];
         this._videoCodecs = ['H264'];
+        this._tones = {};
         this._init(isIncoming);
         this._mediaEventHandler();
     }

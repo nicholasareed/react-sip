@@ -93,6 +93,7 @@ var SipProvider = (function (_super) {
             _this._callConfig = {
                 extraHeaders: _this.props.extraHeaders,
                 sessionTimerExpires: _this.props.sessionTimersExpires,
+                getSetting: _this.props.getSetting
             };
             _this._rtcConfig = {
                 iceServers: _this.props.iceServers,
@@ -194,7 +195,7 @@ var SipProvider = (function (_super) {
             }
             var rtcConfig = _this._getRTCConfig();
             var dtmfOptions = _this._getDtmfOptions();
-            var sipCall = new sipcall_1.SipCall(false, callee, _this._getCallConfig(), rtcConfig, dtmfOptions, _this._mediaEngine, _this.eventBus, additionalInfo);
+            var sipCall = new sipcall_1.SipCall(false, callee, null, _this._getCallConfig(), rtcConfig, dtmfOptions, _this._mediaEngine, _this.eventBus, additionalInfo);
             var ua = _this._getUA();
             sipCall.dial(ua, callee, true, isVideoCall, localVideoEl, remoteVideoEl);
             callList.push(sipCall);
@@ -467,6 +468,7 @@ var SipProvider = (function (_super) {
                     }
                     var originator = data.originator, session = data.session, request = data.request;
                     if (originator === 'remote') {
+                        var remoteIdentity = session.remote_identity;
                         var remoteName = session.remote_identity.display_name;
                         if (remoteName === null || remoteName === '') {
                             remoteName = session.remote_identity.uri.user;
@@ -479,7 +481,7 @@ var SipProvider = (function (_super) {
                             session.terminate(rejectOptions);
                             return;
                         }
-                        var sipCall = new sipcall_1.SipCall(true, remoteName, _this._getCallConfig(), _this._getRTCConfig(), _this._getDtmfOptions(), _this._mediaEngine, _this.eventBus);
+                        var sipCall = new sipcall_1.SipCall(true, remoteName, remoteIdentity, _this._getCallConfig(), _this._getRTCConfig(), _this._getDtmfOptions(), _this._mediaEngine, _this.eventBus, {});
                         sipCall.onNewRTCSession(session, request);
                         callList.push(sipCall);
                         _this.setState({ callList: callList });
@@ -571,6 +573,7 @@ var SipProvider = (function (_super) {
         maxAllowedCalls: PropTypes.number,
         debug: PropTypes.bool,
         registrar: PropTypes.string,
+        getSetting: PropTypes.func,
         children: PropTypes.node,
     };
     SipProvider.defaultProps = {

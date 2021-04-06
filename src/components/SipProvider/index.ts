@@ -56,6 +56,7 @@ export interface JsSipConfig {
   debug: boolean;
   debugNamespaces?: string | null;
   registrar?: string;
+  getSetting?: any
   // TODO: Phone event handlers
 }
 
@@ -118,6 +119,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     maxAllowedCalls: PropTypes.number,
     debug: PropTypes.bool,
     registrar: PropTypes.string,
+    getSetting: PropTypes.func,
     children: PropTypes.node,
   };
 
@@ -222,6 +224,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     this._callConfig = {
       extraHeaders: this.props.extraHeaders,
       sessionTimerExpires: this.props.sessionTimersExpires,
+      getSetting: this.props.getSetting
     };
     // initialize RTC config
     this._rtcConfig = {
@@ -419,6 +422,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     const sipCall = new SipCall(
       false,
       callee,
+      null,
       this._getCallConfig(),
       rtcConfig,
       dtmfOptions,
@@ -632,6 +636,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       const { originator, session, request } = data;
       // INCOMING CALL
       if (originator === 'remote') {
+        let remoteIdentity = session.remote_identity;
         let remoteName = session.remote_identity.display_name;
         if (remoteName === null || remoteName === '') {
           remoteName = session.remote_identity.uri.user;
@@ -649,11 +654,13 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
         const sipCall: SipCall = new SipCall(
           true,
           remoteName,
+          remoteIdentity,
           this._getCallConfig(),
           this._getRTCConfig(),
           this._getDtmfOptions(),
           this._mediaEngine,
           this.eventBus,
+          {}
         );
         sipCall.onNewRTCSession(session, request);
         callList.push(sipCall);

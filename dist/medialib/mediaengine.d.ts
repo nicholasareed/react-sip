@@ -62,8 +62,8 @@ export declare class MediaEngine {
     startOrUpdateOutStreams: (reqId: string, mediaStream: MediaStream | null, track: MediaStreamTrack, audioElement: HTMLMediaElement | null, videoElement: HTMLMediaElement | null) => void;
     muteAudio: () => void;
     unMuteAudio: () => void;
-    playTone: (name: string, volume?: number, continuous?: boolean) => void;
-    stopTone: (name: string) => void;
+    playTone: (name: string | any, volume?: number, continuous?: boolean) => any;
+    stopTone: (name: string | any) => void;
     changeOutputVolume: (vol: number) => void;
     changeInputVolume: (vol: number) => void;
     changeOutStreamVolume: (reqId: string, value: number) => void;

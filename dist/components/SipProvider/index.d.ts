@@ -27,6 +27,7 @@ export interface JsSipConfig {
     debug: boolean;
     debugNamespaces?: string | null;
     registrar?: string;
+    getSetting?: any;
 }
 export interface JsSipState {
     lineStatus: LineStatus;
@@ -125,6 +126,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
         maxAllowedCalls: PropTypes.Requireable<number>;
         debug: PropTypes.Requireable<boolean>;
         registrar: PropTypes.Requireable<string>;
+        getSetting: PropTypes.Requireable<(...args: any[]) => any>;
         children: PropTypes.Requireable<PropTypes.ReactNodeLike>;
     };
     static defaultProps: {
@@ -187,6 +189,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
             debug: boolean;
             debugNamespaces?: string | null | undefined;
             registrar?: string | undefined;
+            getSetting?: any;
             children?: React.ReactNode;
         };
         calls: SipCall[];

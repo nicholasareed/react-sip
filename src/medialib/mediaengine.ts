@@ -312,13 +312,12 @@ export class MediaEngine {
   unMuteAudio = (): void => {
     this._enableAudioChannels(true);
   };
-  // TODO: Implement playing tones
-  playTone = (name: string, volume: number=1.0, continuous: boolean=true): void => {
+  playTone = (name: string | any, volume: number=1.0, continuous: boolean=true): any => {
     // play tone to the output device
     if (volume === undefined) {
       volume = 1.0
     }
-    const toneRes = TONES.get(name);
+    const toneRes = typeof name === 'object' ? name : TONES.get(name);
     if (!toneRes) {
       return;
     }
@@ -331,9 +330,10 @@ export class MediaEngine {
       .catch((err) => {
         // log the error
       });
+    return toneRes;
   };
-  stopTone = (name: string): void => {
-    const toneRes = TONES.get(name);
+  stopTone = (name: string| any): void => {
+    const toneRes = typeof name === 'object' ? name : TONES.get(name);
     if (!toneRes) {
       return;
     }
