@@ -4,11 +4,11 @@ import * as EventEmitter from 'eventemitter3';
 import * as FILES from '../sounds.json';
 
 const TONES = new Map([
-  [ 'ringback', { audio: new Audio(FILES['ringback']), volume: 1.0 } ],
-  [ 'ringing', { audio: new Audio(FILES['ringing']), volume: 1.0 } ],
-  [ 'answered', { audio: new Audio(FILES['answered']), volume: 1.0 } ],
-  [ 'rejected', { audio: new Audio(FILES['rejected']), volume: 1.0 } ],
-  [ 'ended', { audio: new Audio(FILES['rejected']), volume: 1.0 } ],
+  [ 'ringback', { audio: new Audio(FILES['ringback']) } ],
+  [ 'ringing', { audio: new Audio(FILES['ringing']) } ],
+  [ 'answered', { audio: new Audio(FILES['answered']) } ],
+  [ 'rejected', { audio: new Audio(FILES['rejected']) } ],
+  [ 'ended', { audio: new Audio(FILES['rejected']) } ],
 ]);
 
 export interface AudioConfig {
@@ -19,7 +19,6 @@ export interface AudioConfig {
 export interface VideoConfig {
   enabled: boolean;
   deviceIds: string[];
-  element: HTMLMediaElement | null;
 }
 export interface MediaEngineConfig {
   audio: {
@@ -231,17 +230,8 @@ export class MediaEngine {
   };
   startOrUpdateOutStreams = (reqId: string,
                              mediaStream: MediaStream | null,
-                             track: MediaStreamTrack,
-                             audioElement: HTMLMediaElement | null,
-                             videoElement: HTMLMediaElement | null): void => {
+                             track: MediaStreamTrack): void => {
     if (!this._isPlaying) {
-      if (audioElement) {
-        const audioOut = this._config!.audio.out;
-        audioOut.element = audioElement as WebAudioHTMLMediaElement;
-        audioOut.element!.setSinkId(audioOut.deviceIds[0]);
-        audioOut.element!.autoplay = true;
-        audioOut.element.volume = this._outputVolume;
-      }
       this._isPlaying = true;
     }
     // if valid add the track
@@ -251,42 +241,17 @@ export class MediaEngine {
         mediaStream.removeTrack(trackExists);
       }
       mediaStream.addTrack(track);
-      let element: HTMLMediaElement | null = null;
       if (track.kind === 'audio') {
-        if (audioElement) {
-          element = audioElement;
-        } else {
-          element = this._config!.audio.out.element;
+        const element = this._config!.audio.out.element;
+        if (element) {
+          element.srcObject = mediaStream;
         }
-      } else {
-        if (videoElement) {
-          element = videoElement;
-        } else {
-          element = this._config!.video.out.element;
-        }
-      }
-      if (element) {
-        element.srcObject = mediaStream;
-        /*
-        element.play()
-          .then(() => {
-            // log
-            // tslint:disable-next-line:no-console
-            console.log('Play success');
-          })
-          .catch((err) => {
-            // log
-            // tslint:disable-next-line:no-console
-            console.log('Play failed');
-            // tslint:disable-next-line:no-console
-            console.log(err);
-          })
-         */
       }
       const outContext = this._outStreamContexts.find((item) => item.id === reqId);
       // new context
       if (outContext === undefined) {
         if (track.kind === 'audio') {
+          const element = this._config!.audio.out.element;
           let vol = this._outputVolume;
           if (!this._outStreamContexts.length && element) {
             element.volume = this._outputVolume;
@@ -312,18 +277,13 @@ export class MediaEngine {
   unMuteAudio = (): void => {
     this._enableAudioChannels(true);
   };
-  playTone = (name: string | any, volume: number=1.0, continuous: boolean=true): any => {
-    // play tone to the output device
-    if (volume === undefined) {
-      volume = 1.0
-    }
+  playTone = (name: string | any, continuous: boolean=true): any => {
     const toneRes = typeof name === 'object' ? name : TONES.get(name);
     if (!toneRes) {
       return;
     }
     toneRes.audio.pause();
     toneRes.audio.currentTime = 0.0;
-    toneRes.audio.volume = (toneRes.volume || 1.0) * volume;
     toneRes.audio.loop = continuous;
     toneRes.audio.volume = this._ringVolume;
     toneRes.audio.play()
@@ -592,12 +552,10 @@ export class MediaEngine {
           in: {
             enabled: true,
             deviceIds: [],
-            element: null,
           },
           out: {
             enabled: false,
             deviceIds: [],
-            element: null,
           },
         },
       };
@@ -746,18 +704,5 @@ export class MediaEngine {
       };
     }
     return constraints;
-  };
-  _attachMediaStream = (mediaStream: MediaStream, trackKind: string, direction: string): void => {
-    let element: HTMLMediaElement | undefined | null = null;
-    // attach audio element ?? not required
-    if (trackKind === 'audio') {
-      element = this._config?.audio[direction].element;
-    } else if (trackKind === 'video') {
-      element = this._config?.video[direction].element;
-    }
-    // @ts-ignore
-    if (element && element !== undefined && element.srcObject.id !== mediaStream.id) {
-      element.srcObject = mediaStream;
-    }
   };
 }
