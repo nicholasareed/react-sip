@@ -224,10 +224,16 @@ export class SipCall {
     return false;
   };
   hasLocalVideo = (): boolean => {
-    return this._hasLocalVideo;
+    if (this._inputMediaStream) {
+      return this._inputMediaStream.getVideoTracks().length > 0;
+    }
+    return false;
   }
   hasRemoteVideo = (): boolean => {
-    return this._hasRemoteVideo;
+    if (this._outputMediaStream) {
+      return this._outputMediaStream.getVideoTracks().length > 0;
+    }
+    return false;
   }
   getMediaSessionStatus = (): MediaSessionStatus => {
     return this._mediaSessionStatus;
