@@ -99,7 +99,7 @@ export class MediaEngine {
                        audio: boolean,
                        video: boolean): Promise<MediaStream | null> => {
     // tslint:disable-next-line:no-console
-    console.log(this._availableDevices);
+    // console.log(this._availableDevices);
     const opts = this._getMediaConstraints(audio, video);
 
     // If already capturing
@@ -474,6 +474,14 @@ export class MediaEngine {
   };
   getConfiguredDevice = (deviceKind: string): string => {
     let deviceId = 'default';
+    const devices = this._availableDevices.filter((item) => item.kind === deviceKind);
+    if (devices.length > 0) {
+      if (devices.length === 1) {
+        return devices[0].deviceId;
+      }
+    } else {
+      return 'none';
+    }
     switch (deviceKind) {
       case 'audioinput':
         if (this._config!.audio.in.deviceIds.length > 0) {
@@ -665,6 +673,31 @@ export class MediaEngine {
           this._flushDeviceConfig(item.kind, item.deviceId);
         });
         this._eventEmitter.emit('media.device.update', {});
+      })
+      .then(() => {
+        channels.forEach((chnl) => {
+          const devices = this._availableDevices.filter((item) => item.kind === chnl);
+          const defaultExists = devices.find((item) => item.deviceId === 'default');
+          if (devices.length > 0) {
+            switch (chnl) {
+              case 'audioinput':
+                if (this._config?.audio.in.deviceIds.length === 0 && defaultExists === undefined) {
+                  this._config.audio.in.deviceIds[0] = devices[0].deviceId;
+                }
+                break;
+              case 'audiooutput':
+                if (this._config?.audio.out.deviceIds.length === 0 && defaultExists === undefined) {
+                  this._config.audio.out.deviceIds[0] = devices[0].deviceId;
+                }
+                break;
+              case 'videoinput':
+                if (this._config?.video.in.deviceIds.length === 0 && defaultExists === undefined) {
+                  this._config.video.in.deviceIds[0] = devices[0].deviceId;
+                }
+                break;
+            }
+          }
+        });
       })
       .catch((err) => {
         // log error
