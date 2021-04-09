@@ -31,7 +31,8 @@ import {
   CallInfo,
   callInfoListPropType,
   callHistoryPropType,
-  mediaDeviceListPropType
+  mediaDeviceListPropType,
+  AppCallEventHandler
 } from '../../lib/types';
 import { DTMF_TRANSPORT } from 'jssip/lib/Constants';
 
@@ -395,7 +396,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     this.ua.unregister(options);
   }
 
-  makeCall = (callee: string, isVideoCall: boolean, localVideoEl: HTMLMediaElement, remoteVideoEl: HTMLMediaElement, additionalInfo: object): string => {
+  makeCall = (callee: string, isVideoCall: boolean, additionalInfo: object, callEventHandler: AppCallEventHandler): string => {
     if (!callee) {
       throw new Error(`Destination must be defined (${callee} given)`);
     }
@@ -433,7 +434,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     const ua = this._getUA();
 
     // @ts-ignore
-    sipCall.dial(ua, callee, true, isVideoCall, localVideoEl, remoteVideoEl);
+    sipCall.dial(ua, callee, true, isVideoCall, callEventHandler);
     callList.push(sipCall);
     this.setState({ callList });
 
@@ -636,10 +637,10 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       const { originator, session, request } = data;
       // INCOMING CALL
       if (originator === 'remote') {
-        let remoteIdentity = session.remote_identity;
-        let remoteName = session.remote_identity.display_name;
+        const remoteIdentity = session.remote_identity;
+        let remoteName = remoteIdentity.display_name;
         if (remoteName === null || remoteName === '') {
-          remoteName = session.remote_identity.uri.user;
+          remoteName = remoteIdentity.uri.user;
         }
         if (!this._isCallAllowed()) {
           const rejectOptions = {
@@ -700,7 +701,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
         callList.splice(index, 1);
         this.setState({ callList });
         // add the call to history
-        this._addToHistory(call);
+        // this._addToHistory(call);
       }
       // tslint:disable-next-line:no-console
       console.log(callList);
