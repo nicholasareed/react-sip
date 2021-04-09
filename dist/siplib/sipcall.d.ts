@@ -3,7 +3,7 @@ import * as EventEmitter from 'eventemitter3';
 import { RTCSession } from "jssip/lib/RTCSession";
 import { CallStatus, MediaDeviceStatus, MediaSessionStatus, CallDirection, TransferStatus, SdpOfferAnswerStatus } from "..";
 import { SipExtraHeaders } from "./sipua";
-import { Logger } from "../lib/types";
+import { Logger, AppCallEventHandler } from "../lib/types";
 import { DTMF_TRANSPORT } from "jssip/lib/Constants";
 import { MediaEngine } from "../medialib/mediaengine";
 export interface SipCallConfig {
@@ -55,8 +55,6 @@ export declare class SipCall {
     _direction: CallDirection;
     _hasLocalVideo: boolean;
     _hasRemoteVideo: boolean;
-    _localVideoEl: HTMLMediaElement | null;
-    _remoteVideoEl: HTMLMediaElement | null;
     _sdpStatus: SdpOfferAnswerStatus;
     _localMedia: SdpMediaInfo[];
     _remoteMedia: SdpMediaInfo[];
@@ -64,6 +62,7 @@ export declare class SipCall {
     _audioCodecs: string[];
     _videoCodecs: string[];
     _tones: any;
+    _appEventHandler: AppCallEventHandler | null;
     startTime: string | undefined;
     endTime: string | undefined;
     remoteUri: string;
@@ -92,6 +91,7 @@ export declare class SipCall {
     getRTCConfig: () => RTCConfiguration;
     getRTCOfferConstraints: () => RTCOfferOptions;
     getInputMediaStream: () => MediaStream | null;
+    getOutputMediaStream: () => MediaStream | null;
     onNewRTCSession: (rtcSession: RTCSession, request: any) => void;
     setPeerConnection: (conn: RTCPeerConnection | null) => void;
     isDialing: () => boolean;
@@ -105,8 +105,8 @@ export declare class SipCall {
     _setInputMediaStream: (stream: MediaStream | null) => void;
     _configureDebug: () => void;
     _uuid: () => string;
-    dial: (ua: JsSIP.UA, target: string, hasAudio: boolean, hasVideo: boolean, localVideoEl?: HTMLMediaElement | null, remoteVideoEl?: HTMLMediaElement | null) => void;
-    accept: (hasAudio?: boolean, hasVideo?: boolean, localVideoEl?: HTMLMediaElement | null, remoteVideoEl?: HTMLMediaElement | null) => void;
+    dial: (ua: JsSIP.UA, target: string, hasAudio: boolean, hasVideo: boolean, appEventHandler: AppCallEventHandler) => void;
+    accept: (hasAudio: boolean | undefined, hasVideo: boolean | undefined, appEventHandler: AppCallEventHandler) => void;
     reject: (code?: number, reason?: string) => void;
     hangup: () => void;
     sendDTMF: (tones: string) => void;
@@ -116,7 +116,7 @@ export declare class SipCall {
     toggleHold: () => void;
     isOnLocalHold: () => boolean;
     isOnRemoteHold: () => boolean;
-    offerVideo: (localVideoEl: HTMLMediaElement | null) => void;
+    offerVideo: () => void;
     changeInputVolume: (vol: number) => void;
     getInputVolume: () => number;
     renegotiate: () => boolean;

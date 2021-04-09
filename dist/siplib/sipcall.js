@@ -16,7 +16,7 @@ var SipCall = (function () {
                 var toneNameOrObj = (_c = (_b = (_a = _this._callConfig).getSetting) === null || _b === void 0 ? void 0 : _b.call(_a, 'call-ringing-tone', {
                     call: _this
                 }, function () { return 'ringing'; })) !== null && _c !== void 0 ? _c : 'ringing';
-                _this._tones['ringing'] = _this._mediaEngine.playTone(toneNameOrObj, 1.0);
+                _this._tones['ringing'] = _this._mediaEngine.playTone(toneNameOrObj);
             }
             else {
                 _this.remoteUser = _this.remoteName;
@@ -76,10 +76,16 @@ var SipCall = (function () {
             return false;
         };
         this.hasLocalVideo = function () {
-            return _this._hasLocalVideo;
+            if (_this._inputMediaStream) {
+                return _this._inputMediaStream.getVideoTracks().length > 0;
+            }
+            return false;
         };
         this.hasRemoteVideo = function () {
-            return _this._hasRemoteVideo;
+            if (_this._outputMediaStream) {
+                return _this._outputMediaStream.getVideoTracks().length > 0;
+            }
+            return false;
         };
         this.getMediaSessionStatus = function () {
             return _this._mediaSessionStatus;
@@ -100,6 +106,9 @@ var SipCall = (function () {
         };
         this.getInputMediaStream = function () {
             return _this._inputMediaStream;
+        };
+        this.getOutputMediaStream = function () {
+            return _this._outputMediaStream;
         };
         this.onNewRTCSession = function (rtcSession, request) {
             console.log('ON NEW RTC Session');
@@ -194,20 +203,14 @@ var SipCall = (function () {
                 return v.toString(16);
             });
         };
-        this.dial = function (ua, target, hasAudio, hasVideo, localVideoEl, remoteVideoEl) {
-            if (localVideoEl === void 0) { localVideoEl = null; }
-            if (remoteVideoEl === void 0) { remoteVideoEl = null; }
+        this.dial = function (ua, target, hasAudio, hasVideo, appEventHandler) {
             if (hasVideo) {
                 _this._hasLocalVideo = true;
-                _this._localVideoEl = localVideoEl;
-                _this._remoteVideoEl = remoteVideoEl;
             }
+            _this._appEventHandler = appEventHandler;
             _this._mediaEngine.openStreams(_this.getId(), hasAudio, hasVideo).then(function (stream) {
                 if (!stream) {
                     throw Error('Failed to open the input streams');
-                }
-                if (hasVideo && localVideoEl) {
-                    localVideoEl.srcObject = stream;
                 }
                 var opts = {
                     mediaConstraints: {
@@ -229,14 +232,19 @@ var SipCall = (function () {
                 _this._setInputMediaStream(stream);
                 _this._hasLocalVideo = hasVideo;
                 _this._eventEmitter.emit('call.update', { 'call': _this });
+                if (_this._appEventHandler) {
+                    _this._appEventHandler('input.stream.opened', {
+                        obj: _this,
+                        audio: (stream.getAudioTracks().length > 0),
+                        video: (stream.getVideoTracks().length > 0)
+                    });
+                }
                 ua.call(target, opts);
             });
         };
-        this.accept = function (hasAudio, hasVideo, localVideoEl, remoteVideoEl) {
+        this.accept = function (hasAudio, hasVideo, appEventHandler) {
             if (hasAudio === void 0) { hasAudio = true; }
             if (hasVideo === void 0) { hasVideo = false; }
-            if (localVideoEl === void 0) { localVideoEl = null; }
-            if (remoteVideoEl === void 0) { remoteVideoEl = null; }
             if (!_this.isSessionActive()) {
                 throw new Error("RtcSession is not active");
             }
@@ -247,12 +255,8 @@ var SipCall = (function () {
             if (hasVideo) {
                 _this._hasLocalVideo = true;
             }
-            _this._localVideoEl = localVideoEl;
-            _this._remoteVideoEl = remoteVideoEl;
+            _this._appEventHandler = appEventHandler;
             _this._mediaEngine.openStreams(_this.getId(), hasAudio, hasVideo).then(function (inputStream) {
-                if (hasVideo && localVideoEl) {
-                    localVideoEl.srcObject = inputStream;
-                }
                 var stream = inputStream;
                 var options = {
                     extraHeaders: _this.getExtraHeaders().resp2xx,
@@ -268,6 +272,13 @@ var SipCall = (function () {
                 _this.setCallStatus(__1.CALL_STATUS_CONNECTING);
                 _this._setInputMediaStream(inputStream);
                 _this._mediaEngine.stopTone(_this._tones['ringing'] || 'ringing');
+                if (_this._appEventHandler) {
+                    _this._appEventHandler('input.stream.opened', {
+                        obj: _this,
+                        audio: (inputStream.getAudioTracks().length > 0),
+                        video: (inputStream.getVideoTracks().length > 0)
+                    });
+                }
             });
         };
         this.reject = function (code, reason) {
@@ -304,9 +315,8 @@ var SipCall = (function () {
             _this.getRTCSession().terminate(options);
             _this._mediaEngine.closeStream(_this.getId());
             _this._setInputMediaStream(null);
-            if (_this._localVideoEl) {
-                _this._localVideoEl.srcObject = null;
-                _this._localVideoEl = null;
+            if (_this._appEventHandler) {
+                _this._appEventHandler('input.stream.closed', { obj: _this });
             }
             if (_this.getCallStatus() === __1.CALL_STATUS_PROGRESS) {
                 _this._mediaEngine.stopTone('ringback');
@@ -418,15 +428,12 @@ var SipCall = (function () {
             }
             return false;
         };
-        this.offerVideo = function (localVideoEl) {
+        this.offerVideo = function () {
             if (!_this.isSessionActive()) {
                 throw new Error('RtcSession is not active');
             }
             if (_this.getCallStatus() !== __1.CALL_STATUS_ACTIVE) {
                 throw new Error("Calling offerVideo() is not allowed when call status is " + _this.getCallStatus());
-            }
-            if (localVideoEl) {
-                _this._localVideoEl = localVideoEl;
             }
             var peerConnection = _this._peerConnection;
             var transceivers = peerConnection === null || peerConnection === void 0 ? void 0 : peerConnection.getTransceivers();
@@ -443,9 +450,6 @@ var SipCall = (function () {
                 stream.getVideoTracks().forEach(function (track) {
                     peerConnection === null || peerConnection === void 0 ? void 0 : peerConnection.addTrack(track, stream);
                 });
-                if (_this._localVideoEl) {
-                    _this._localVideoEl.srcObject = stream;
-                }
                 var options = {
                     useUpdate: false,
                     rtcOfferConstraints: {
@@ -458,6 +462,9 @@ var SipCall = (function () {
                 _this._setInputMediaStream(stream);
                 _this._hasLocalVideo = true;
                 _this._eventEmitter.emit('call.update', { 'call': _this });
+                if (_this._appEventHandler) {
+                    _this._appEventHandler('input.steam.modified', { obj: _this, audio: true, video: true });
+                }
                 _this.getRTCSession().renegotiate(options);
             });
         };
@@ -646,7 +653,14 @@ var SipCall = (function () {
             _this._transferStatus = __1.TRANSFER_STATUS_FAILED;
         };
         this._handleRemoteTrack = function (track) {
-            _this._mediaEngine.startOrUpdateOutStreams(_this.getId(), _this._outputMediaStream, track, null, _this._remoteVideoEl);
+            _this._mediaEngine.startOrUpdateOutStreams(_this.getId(), _this._outputMediaStream, track);
+            if (_this._appEventHandler) {
+                _this._appEventHandler('output.stream.modified', {
+                    obj: _this,
+                    audio: (track.kind === 'audio'),
+                    video: (track.kind === 'video')
+                });
+            }
         };
         this._handleLocalSdp = function (sdp) {
             var sdpObj = sdpTransform.parse(sdp);
@@ -658,7 +672,6 @@ var SipCall = (function () {
                     mode = media.direction;
                 }
                 if (type === 'video' && media.port !== 0) {
-                    console.log('Local Video present');
                 }
                 _this._localMedia.push({ mode: mode, type: type, payloads: media.rtp });
                 if (_this._modifySdp) {
@@ -697,7 +710,6 @@ var SipCall = (function () {
             if (sdpAudio !== undefined) {
             }
             if (sdpVideo !== undefined && sdpVideo.port !== 0) {
-                console.log('Incoming video call');
                 _this._hasRemoteVideo = true;
             }
             _this._remoteMedia = [];
@@ -709,7 +721,6 @@ var SipCall = (function () {
                 _this._remoteMedia.push({ mode: mode, type: media.type, payloads: media.rtp });
             });
             _this._sdpStatus = __1.SDP_OFFER_RECEIVED;
-            console.log(_this._remoteMedia);
         };
         this._handleRemoteAnswer = function (sdp) {
             var sdpObj = sdpTransform.parse(sdp);
@@ -719,7 +730,6 @@ var SipCall = (function () {
             }
             var sdpVideo = sdpObj.media.find(function (mline) { return mline.type === 'video'; });
             if (sdpVideo !== undefined && sdpVideo.port !== 0) {
-                console.log('Incoming video call');
                 _this._hasRemoteVideo = true;
             }
             _this._remoteMedia = [];
@@ -733,7 +743,6 @@ var SipCall = (function () {
                 }
             });
             _this._sdpStatus = __1.SDP_OFFER_ANSWER_COMPLETE;
-            console.log(_this._remoteMedia);
         };
         this._initSessionEventHandler = function () {
             var rtcSession = _this.getRTCSession();
@@ -749,13 +758,10 @@ var SipCall = (function () {
                     _this._handleRemoteTrack(event.track);
                     _this._eventEmitter.emit('call.update', { 'call': _this });
                     event.track.addEventListener('unmute', function (ev) {
-                        console.log('Received track unmute event');
                     });
                     event.track.addEventListener('mute', function (ev) {
-                        console.log('Received track mute event');
                     });
                     event.track.addEventListener('ended', function (ev) {
-                        console.log('Received track ended event');
                     });
                 });
                 peerConnection.addEventListener('removestream', function (event) {
@@ -785,7 +791,7 @@ var SipCall = (function () {
                 _this._logger.debug('RTCSession "progress" event received', data);
                 if (_this.getCallStatus() === __1.CALL_STATUS_DIALING) {
                     _this.setCallStatus(__1.CALL_STATUS_PROGRESS);
-                    _this._mediaEngine.playTone('ringback', 1.0);
+                    _this._mediaEngine.playTone('ringback');
                     _this._eventEmitter.emit('call.update', { 'call': _this });
                 }
             });
@@ -812,13 +818,9 @@ var SipCall = (function () {
                 _this._mediaEngine.closeStream(_this.getId());
                 _this._setInputMediaStream(null);
                 _this._outputMediaStream = null;
-                if (_this._localVideoEl) {
-                    _this._localVideoEl.srcObject = null;
-                    _this._localVideoEl = null;
-                }
-                if (_this._remoteVideoEl) {
-                    _this._remoteVideoEl.srcObject = null;
-                    _this._remoteVideoEl = null;
+                if (_this._appEventHandler) {
+                    _this._appEventHandler('input.stream.closed', { obj: _this });
+                    _this._appEventHandler('output.stream.closed', { obj: _this });
                 }
                 if ((rtcSession === null || rtcSession === void 0 ? void 0 : rtcSession.end_time) && rtcSession.end_time !== undefined) {
                     _this.endTime = rtcSession === null || rtcSession === void 0 ? void 0 : rtcSession.end_time.toString();
@@ -842,13 +844,9 @@ var SipCall = (function () {
                 _this._mediaEngine.closeStream(_this.getId());
                 _this._setInputMediaStream(null);
                 _this._outputMediaStream = null;
-                if (_this._localVideoEl) {
-                    _this._localVideoEl.srcObject = null;
-                    _this._localVideoEl = null;
-                }
-                if (_this._remoteVideoEl) {
-                    _this._remoteVideoEl.srcObject = null;
-                    _this._remoteVideoEl = null;
+                if (_this._appEventHandler) {
+                    _this._appEventHandler('input.stream.closed', { obj: _this });
+                    _this._appEventHandler('output.stream.closed', { obj: _this });
                 }
                 if (_this.getCallStatus() === __1.CALL_STATUS_RINGING) {
                     _this._mediaEngine.stopTone(_this._tones['ringing'] || 'ringing');
@@ -953,7 +951,6 @@ var SipCall = (function () {
             });
             rtcSession.on('sdp', function (data) {
                 _this._logger.debug('RTCSession "sdp" event received', data);
-                console.log("ON session SDP event");
                 var originator = data.originator, type = data.type, sdp = data.sdp;
                 if (originator === 'remote') {
                     if (type === 'answer') {
@@ -988,6 +985,13 @@ var SipCall = (function () {
                         });
                     });
                 }
+                if (_this._appEventHandler) {
+                    _this._appEventHandler('input.stream.modified', {
+                        obj: _this,
+                        audio: true,
+                        video: false
+                    });
+                }
             });
             _this._eventEmitter.on('audio.output.update', function (event) {
             });
@@ -1002,6 +1006,13 @@ var SipCall = (function () {
                             }
                         });
                     });
+                    if (_this._appEventHandler) {
+                        _this._appEventHandler('input.stream.update', {
+                            obj: _this,
+                            audio: false,
+                            video: true
+                        });
+                    }
                 }
             });
         };
@@ -1022,8 +1033,6 @@ var SipCall = (function () {
         this._transferStatus = __1.TRANSFER_STATUS_NONE;
         this._hasLocalVideo = false;
         this._hasRemoteVideo = false;
-        this._localVideoEl = null;
-        this._remoteVideoEl = null;
         this._sdpStatus = __1.SDP_OFFER_PENDING;
         this._localMedia = [];
         this._remoteMedia = [];
@@ -1032,6 +1041,7 @@ var SipCall = (function () {
         this._audioCodecs = ['G722', 'PCMA', 'PCMU', 'telephone-event', 'CN'];
         this._videoCodecs = ['H264'];
         this._tones = {};
+        this._appEventHandler = null;
         this._init(isIncoming);
         this._mediaEventHandler();
     }

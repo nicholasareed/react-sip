@@ -6,7 +6,7 @@ import { MediaDevice } from '../../medialib/mediaengine';
 import { SipExtraHeaders } from '../../siplib/sipua';
 import { DtmfOptions, SipCall, SipCallConfig } from '../../siplib/sipcall';
 import { LineStatus, SipStatus, SipErrorType } from '../../lib/enums';
-import { CallInfo } from '../../lib/types';
+import { CallInfo, AppCallEventHandler } from '../../lib/types';
 export interface JsSipConfig {
     socket: string;
     user: string;
@@ -232,7 +232,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     _addToHistory: (call: any) => void;
     registerSip(): void;
     unregisterSip(options?: UnRegisterOptions): void;
-    makeCall: (callee: string, isVideoCall: boolean, localVideoEl: HTMLMediaElement, remoteVideoEl: HTMLMediaElement, additionalInfo: object) => string;
+    makeCall: (callee: string, isVideoCall: boolean, additionalInfo: object, callEventHandler: AppCallEventHandler) => string;
     playTone: (tone: string) => void;
     stopTone: (tone: string) => void;
     setSpeakerVolume: (vol: number) => void;

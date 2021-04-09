@@ -85,3 +85,4 @@ export interface Logger {
     warn(message?: any, ...optionalParams: any[]): void;
     log(message?: any, ...optionalParams: any[]): void;
 }
+export declare type AppCallEventHandler = (event: string, params: any) => void;

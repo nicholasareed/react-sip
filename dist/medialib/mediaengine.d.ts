@@ -8,7 +8,6 @@ export interface AudioConfig {
 export interface VideoConfig {
     enabled: boolean;
     deviceIds: string[];
-    element: HTMLMediaElement | null;
 }
 export interface MediaEngineConfig {
     audio: {
@@ -59,10 +58,10 @@ export declare class MediaEngine {
     updateStream: (reqId: string, audio: boolean, video: boolean) => Promise<MediaStream | null>;
     closeStream: (reqId: string) => void;
     closeAll: () => void;
-    startOrUpdateOutStreams: (reqId: string, mediaStream: MediaStream | null, track: MediaStreamTrack, audioElement: HTMLMediaElement | null, videoElement: HTMLMediaElement | null) => void;
+    startOrUpdateOutStreams: (reqId: string, mediaStream: MediaStream | null, track: MediaStreamTrack) => void;
     muteAudio: () => void;
     unMuteAudio: () => void;
-    playTone: (name: string | any, volume?: number, continuous?: boolean) => any;
+    playTone: (name: string | any, continuous?: boolean) => any;
     stopTone: (name: string | any) => void;
     changeOutputVolume: (vol: number) => void;
     changeInputVolume: (vol: number) => void;
@@ -88,5 +87,4 @@ export declare class MediaEngine {
     _refreshDevices: () => void;
     _initDevices: () => void;
     _getMediaConstraints: (isAudio: boolean, isVideo: boolean) => MediaStreamConstraints;
-    _attachMediaStream: (mediaStream: MediaStream, trackKind: string, direction: string) => void;
 }

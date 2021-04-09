@@ -39,11 +39,11 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.MediaEngine = void 0;
 var FILES = require("../sounds.json");
 var TONES = new Map([
-    ['ringback', { audio: new Audio(FILES['ringback']), volume: 1.0 }],
-    ['ringing', { audio: new Audio(FILES['ringing']), volume: 1.0 }],
-    ['answered', { audio: new Audio(FILES['answered']), volume: 1.0 }],
-    ['rejected', { audio: new Audio(FILES['rejected']), volume: 1.0 }],
-    ['ended', { audio: new Audio(FILES['rejected']), volume: 1.0 }],
+    ['ringback', { audio: new Audio(FILES['ringback']) }],
+    ['ringing', { audio: new Audio(FILES['ringing']) }],
+    ['answered', { audio: new Audio(FILES['answered']) }],
+    ['rejected', { audio: new Audio(FILES['rejected']) }],
+    ['ended', { audio: new Audio(FILES['rejected']) }],
 ]);
 var MediaEngine = (function () {
     function MediaEngine(config, eventEmitter) {
@@ -67,7 +67,6 @@ var MediaEngine = (function () {
             var opts;
             var _this = this;
             return __generator(this, function (_a) {
-                console.log(this._availableDevices);
                 opts = this._getMediaConstraints(audio, video);
                 return [2, navigator.mediaDevices.getUserMedia(opts).then(function (mediaStream) {
                         var audioSource = _this._audioContext.createMediaStreamSource(mediaStream);
@@ -171,15 +170,8 @@ var MediaEngine = (function () {
             _this._outStreamContexts = [];
             _this._isPlaying = false;
         };
-        this.startOrUpdateOutStreams = function (reqId, mediaStream, track, audioElement, videoElement) {
+        this.startOrUpdateOutStreams = function (reqId, mediaStream, track) {
             if (!_this._isPlaying) {
-                if (audioElement) {
-                    var audioOut = _this._config.audio.out;
-                    audioOut.element = audioElement;
-                    audioOut.element.setSinkId(audioOut.deviceIds[0]);
-                    audioOut.element.autoplay = true;
-                    audioOut.element.volume = _this._outputVolume;
-                }
                 _this._isPlaying = true;
             }
             if (mediaStream) {
@@ -188,29 +180,16 @@ var MediaEngine = (function () {
                     mediaStream.removeTrack(trackExists);
                 }
                 mediaStream.addTrack(track);
-                var element = null;
                 if (track.kind === 'audio') {
-                    if (audioElement) {
-                        element = audioElement;
+                    var element = _this._config.audio.out.element;
+                    if (element) {
+                        element.srcObject = mediaStream;
                     }
-                    else {
-                        element = _this._config.audio.out.element;
-                    }
-                }
-                else {
-                    if (videoElement) {
-                        element = videoElement;
-                    }
-                    else {
-                        element = _this._config.video.out.element;
-                    }
-                }
-                if (element) {
-                    element.srcObject = mediaStream;
                 }
                 var outContext = _this._outStreamContexts.find(function (item) { return item.id === reqId; });
                 if (outContext === undefined) {
                     if (track.kind === 'audio') {
+                        var element = _this._config.audio.out.element;
                         var vol = _this._outputVolume;
                         if (!_this._outStreamContexts.length && element) {
                             element.volume = _this._outputVolume;
@@ -238,19 +217,14 @@ var MediaEngine = (function () {
         this.unMuteAudio = function () {
             _this._enableAudioChannels(true);
         };
-        this.playTone = function (name, volume, continuous) {
-            if (volume === void 0) { volume = 1.0; }
+        this.playTone = function (name, continuous) {
             if (continuous === void 0) { continuous = true; }
-            if (volume === undefined) {
-                volume = 1.0;
-            }
             var toneRes = typeof name === 'object' ? name : TONES.get(name);
             if (!toneRes) {
                 return;
             }
             toneRes.audio.pause();
             toneRes.audio.currentTime = 0.0;
-            toneRes.audio.volume = (toneRes.volume || 1.0) * volume;
             toneRes.audio.loop = continuous;
             toneRes.audio.volume = _this._ringVolume;
             toneRes.audio.play()
@@ -434,6 +408,15 @@ var MediaEngine = (function () {
         };
         this.getConfiguredDevice = function (deviceKind) {
             var deviceId = 'default';
+            var devices = _this._availableDevices.filter(function (item) { return item.kind === deviceKind; });
+            if (devices.length > 0) {
+                if (devices.length === 1) {
+                    return devices[0].deviceId;
+                }
+            }
+            else {
+                return 'none';
+            }
             switch (deviceKind) {
                 case 'audioinput':
                     if (_this._config.audio.in.deviceIds.length > 0) {
@@ -559,6 +542,32 @@ var MediaEngine = (function () {
                 });
                 _this._eventEmitter.emit('media.device.update', {});
             })
+                .then(function () {
+                channels.forEach(function (chnl) {
+                    var _a, _b, _c;
+                    var devices = _this._availableDevices.filter(function (item) { return item.kind === chnl; });
+                    var defaultExists = devices.find(function (item) { return item.deviceId === 'default'; });
+                    if (devices.length > 0) {
+                        switch (chnl) {
+                            case 'audioinput':
+                                if (((_a = _this._config) === null || _a === void 0 ? void 0 : _a.audio.in.deviceIds.length) === 0 && defaultExists === undefined) {
+                                    _this._config.audio.in.deviceIds[0] = devices[0].deviceId;
+                                }
+                                break;
+                            case 'audiooutput':
+                                if (((_b = _this._config) === null || _b === void 0 ? void 0 : _b.audio.out.deviceIds.length) === 0 && defaultExists === undefined) {
+                                    _this._config.audio.out.deviceIds[0] = devices[0].deviceId;
+                                }
+                                break;
+                            case 'videoinput':
+                                if (((_c = _this._config) === null || _c === void 0 ? void 0 : _c.video.in.deviceIds.length) === 0 && defaultExists === undefined) {
+                                    _this._config.video.in.deviceIds[0] = devices[0].deviceId;
+                                }
+                                break;
+                        }
+                    }
+                });
+            })
                 .catch(function (err) {
                 console.log("Enumerate devices error " + err.cause);
             });
@@ -591,19 +600,6 @@ var MediaEngine = (function () {
             }
             return constraints;
         };
-        this._attachMediaStream = function (mediaStream, trackKind, direction) {
-            var _a, _b;
-            var element = null;
-            if (trackKind === 'audio') {
-                element = (_a = _this._config) === null || _a === void 0 ? void 0 : _a.audio[direction].element;
-            }
-            else if (trackKind === 'video') {
-                element = (_b = _this._config) === null || _b === void 0 ? void 0 : _b.video[direction].element;
-            }
-            if (element && element !== undefined && element.srcObject.id !== mediaStream.id) {
-                element.srcObject = mediaStream;
-            }
-        };
         this._isPlaying = false;
         this._availableDevices = [];
         this._inStreamContexts = [];
@@ -635,12 +631,10 @@ var MediaEngine = (function () {
                     in: {
                         enabled: true,
                         deviceIds: [],
-                        element: null,
                     },
                     out: {
                         enabled: false,
                         deviceIds: [],
-                        element: null,
                     },
                 },
             };

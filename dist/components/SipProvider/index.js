@@ -175,7 +175,7 @@ var SipProvider = (function (_super) {
             var callHistory = __spreadArrays([callInfo], _this.state.callHistory);
             _this.setState({ callHistory: callHistory });
         };
-        _this.makeCall = function (callee, isVideoCall, localVideoEl, remoteVideoEl, additionalInfo) {
+        _this.makeCall = function (callee, isVideoCall, additionalInfo, callEventHandler) {
             if (!callee) {
                 throw new Error("Destination must be defined (" + callee + " given)");
             }
@@ -197,7 +197,7 @@ var SipProvider = (function (_super) {
             var dtmfOptions = _this._getDtmfOptions();
             var sipCall = new sipcall_1.SipCall(false, callee, null, _this._getCallConfig(), rtcConfig, dtmfOptions, _this._mediaEngine, _this.eventBus, additionalInfo);
             var ua = _this._getUA();
-            sipCall.dial(ua, callee, true, isVideoCall, localVideoEl, remoteVideoEl);
+            sipCall.dial(ua, callee, true, isVideoCall, callEventHandler);
             callList.push(sipCall);
             _this.setState({ callList: callList });
             return sipCall.getId();
@@ -469,9 +469,9 @@ var SipProvider = (function (_super) {
                     var originator = data.originator, session = data.session, request = data.request;
                     if (originator === 'remote') {
                         var remoteIdentity = session.remote_identity;
-                        var remoteName = session.remote_identity.display_name;
+                        var remoteName = remoteIdentity.display_name;
                         if (remoteName === null || remoteName === '') {
-                            remoteName = session.remote_identity.uri.user;
+                            remoteName = remoteIdentity.uri.user;
                         }
                         if (!_this._isCallAllowed()) {
                             var rejectOptions = {
@@ -512,7 +512,6 @@ var SipProvider = (function (_super) {
                     if (index !== -1) {
                         callList.splice(index, 1);
                         _this.setState({ callList: callList });
-                        _this._addToHistory(call);
                     }
                     console.log(callList);
                 });
