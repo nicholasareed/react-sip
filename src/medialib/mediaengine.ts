@@ -31,6 +31,11 @@ export interface MediaEngineConfig {
     width: number,
     height: number,
   };
+  screenShare: {
+    cursor: string,
+    logicalSurface: boolean,
+    screenAudio: false
+  };
 }
 export interface MediaDevice {
   deviceId: string;
@@ -278,12 +283,13 @@ export class MediaEngine {
   // todo: screen audio
   startScreenCapture = (reqId: string): Promise<MediaStream | null> => {
     // screenshare constraints
+    const screenShareSettings = this._config!.screenShare;
     const constraints = {
       video : {
-        cursor: 'never',
-        logicalSurface: false
+        cursor: screenShareSettings.cursor,
+        logicalSurface: screenShareSettings.logicalSurface,
       },
-      audio: false
+      audio: screenShareSettings.screenAudio
     };
     // @ts-ignore
     return navigator.mediaDevices.getDisplayMedia(constraints)
@@ -527,21 +533,24 @@ export class MediaEngine {
     }
     this._changeDeviceConfig('videoinput', deviceId);
     this._inStreamContexts.forEach((ctxt) => {
-      const reqId = ctxt.id;
-      const amplStream = ctxt.amplStream;
-      amplStream.getVideoTracks().forEach((track) => {
-        track.enabled = false;
-        track.stop();
-        amplStream.removeTrack(track);
-      });
-      const opts = this._getMediaConstraints(false, true);
-      navigator.mediaDevices.getUserMedia(opts).then((mediaStream) => {
-        mediaStream.getVideoTracks().forEach((track) => {
-          ctxt.amplStream.addTrack(track);
-        })
-      }).then(() => {
-        this._eventEmitter.emit('video.input.update', {'reqId': reqId, 'stream': ctxt.amplStream});
-      });
+      // skip if it is a screen share session
+      if (!ctxt.hasScreenMedia) {
+        const reqId = ctxt.id;
+        const amplStream = ctxt.amplStream;
+        amplStream.getVideoTracks().forEach((track) => {
+          track.enabled = false;
+          track.stop();
+          amplStream.removeTrack(track);
+        });
+        const opts = this._getMediaConstraints(false, true);
+        navigator.mediaDevices.getUserMedia(opts).then((mediaStream) => {
+          mediaStream.getVideoTracks().forEach((track) => {
+            ctxt.amplStream.addTrack(track);
+          })
+        }).then(() => {
+          this._eventEmitter.emit('video.input.update', {'reqId': reqId, 'stream': ctxt.amplStream});
+        });
+      }
     });
   };
   getConfiguredDevice = (deviceKind: string): string => {
@@ -640,6 +649,11 @@ export class MediaEngine {
           width: 1280,
           height: 720
         },
+        screenShare: {
+          cursor: 'always',
+          logicalSurface: false,
+          screenAudio: false
+        }
       };
       const audioOut = this._config!.audio.out;
       audioOut.element = window.document.createElement('audio') as WebAudioHTMLMediaElement;

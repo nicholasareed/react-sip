@@ -781,6 +781,14 @@ export class SipCall {
     return this._mediaDeviceStatus.video === MEDIA_DEVICE_STATUS_MUTE;
   };
   startScreenShare = (): void => {
+    if (!this.isSessionActive()) {
+      throw new Error('RtcSession is not active');
+    }
+    if (this.getCallStatus() !== CALL_STATUS_ACTIVE) {
+      throw new Error(
+        `Start Screenshare is not allowed when call status is ${this.getCallStatus()}`,
+      );
+    }
     this._mediaEngine.startScreenCapture(this.getId()).then((mediaStream) => {
       if (mediaStream) {
         const peerConn = this._peerConnection;
@@ -804,6 +812,17 @@ export class SipCall {
     });
   };
   stopScreenShare = (): void => {
+    if (!this.isSessionActive()) {
+      throw new Error('RtcSession is not active');
+    }
+    if (this.getCallStatus() !== CALL_STATUS_ACTIVE) {
+      throw new Error(
+        `Stop Screenshare is not allowed when call status is ${this.getCallStatus()}`,
+      );
+    }
+    if (!this._shareScreen) {
+      throw new Error('Screen share session is not active');
+    }
     this._shareScreen = false;
     this._mediaEngine.stopScreenCapture(this.getId(), true).then((mediaStream) => {
       if (mediaStream) {
@@ -1378,6 +1397,7 @@ export class SipCall {
           });
         });
       }
+      /*
       if (this._appEventHandler) {
         this._appEventHandler(
           'input.stream.modified',
@@ -1388,6 +1408,7 @@ export class SipCall {
           }
         );
       }
+       */
     });
     this._eventEmitter.on('audio.output.update', (event) => {
       // handle output update
@@ -1404,6 +1425,7 @@ export class SipCall {
             }
           });
         });
+        /*
         if (this._appEventHandler) {
           this._appEventHandler(
             'input.stream.update',
@@ -1414,6 +1436,7 @@ export class SipCall {
             }
           );
         }
+        */
       }
     });
   };
