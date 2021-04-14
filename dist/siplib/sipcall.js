@@ -569,6 +569,70 @@ var SipCall = (function () {
         this.isVideoOnMute = function () {
             return _this._mediaDeviceStatus.video === __1.MEDIA_DEVICE_STATUS_MUTE;
         };
+        this.startScreenShare = function () {
+            if (!_this.isSessionActive()) {
+                throw new Error('RtcSession is not active');
+            }
+            if (_this.getCallStatus() !== __1.CALL_STATUS_ACTIVE) {
+                throw new Error("Start Screenshare is not allowed when call status is " + _this.getCallStatus());
+            }
+            _this._mediaEngine.startScreenCapture(_this.getId()).then(function (mediaStream) {
+                if (mediaStream) {
+                    var peerConn_1 = _this._peerConnection;
+                    mediaStream.getVideoTracks().forEach(function (track) {
+                        peerConn_1 === null || peerConn_1 === void 0 ? void 0 : peerConn_1.getSenders().forEach(function (sender) {
+                            if (sender.track && sender.track.kind === 'video') {
+                                sender.replaceTrack(track);
+                            }
+                        });
+                    });
+                    _this._shareScreen = true;
+                    var ssTrack = mediaStream.getVideoTracks()[0];
+                    ssTrack.addEventListener('ended', function () {
+                        if (_this._shareScreen) {
+                            _this.stopScreenShare();
+                        }
+                    });
+                    _this._eventEmitter.emit('call.update', { 'call': _this });
+                }
+            });
+        };
+        this.stopScreenShare = function () {
+            if (!_this.isSessionActive()) {
+                throw new Error('RtcSession is not active');
+            }
+            if (_this.getCallStatus() !== __1.CALL_STATUS_ACTIVE) {
+                throw new Error("Stop Screenshare is not allowed when call status is " + _this.getCallStatus());
+            }
+            if (!_this._shareScreen) {
+                throw new Error('Screen share session is not active');
+            }
+            _this._shareScreen = false;
+            _this._mediaEngine.stopScreenCapture(_this.getId(), true).then(function (mediaStream) {
+                if (mediaStream) {
+                    var peerConn_2 = _this._peerConnection;
+                    mediaStream.getVideoTracks().forEach(function (track) {
+                        peerConn_2 === null || peerConn_2 === void 0 ? void 0 : peerConn_2.getSenders().forEach(function (sender) {
+                            if (sender.track && sender.track.kind === 'video') {
+                                sender.replaceTrack(track);
+                            }
+                        });
+                    });
+                    _this._eventEmitter.emit('call.update', { 'call': _this });
+                }
+            });
+        };
+        this.toggleScreenShare = function () {
+            if (_this._shareScreen) {
+                _this.stopScreenShare();
+            }
+            else {
+                _this.startScreenShare();
+            }
+        };
+        this.isScreenShareOn = function () {
+            return _this._shareScreen;
+        };
         this.blindTransfer = function (target) {
             if (!_this.getRTCSession()) {
                 throw new Error('RtcSession is not active');
@@ -976,20 +1040,13 @@ var SipCall = (function () {
                 console.log("On audio.input.update event for callid: " + event.reqId);
                 if (event.reqId === _this.getId()) {
                     var mediaStream = event.stream;
-                    var peerConn_1 = _this._peerConnection;
+                    var peerConn_3 = _this._peerConnection;
                     mediaStream.getAudioTracks().forEach(function (track) {
-                        peerConn_1 === null || peerConn_1 === void 0 ? void 0 : peerConn_1.getSenders().forEach(function (sender) {
+                        peerConn_3 === null || peerConn_3 === void 0 ? void 0 : peerConn_3.getSenders().forEach(function (sender) {
                             if (sender.track && sender.track.kind === 'audio') {
                                 sender.replaceTrack(track);
                             }
                         });
-                    });
-                }
-                if (_this._appEventHandler) {
-                    _this._appEventHandler('input.stream.modified', {
-                        obj: _this,
-                        audio: true,
-                        video: false
                     });
                 }
             });
@@ -998,21 +1055,14 @@ var SipCall = (function () {
             _this._eventEmitter.on('video.input.update', function (event) {
                 if (event.reqId === _this.getId()) {
                     var mediaStream = event.stream;
-                    var peerConn_2 = _this._peerConnection;
+                    var peerConn_4 = _this._peerConnection;
                     mediaStream.getVideoTracks().forEach(function (track) {
-                        peerConn_2 === null || peerConn_2 === void 0 ? void 0 : peerConn_2.getSenders().forEach(function (sender) {
+                        peerConn_4 === null || peerConn_4 === void 0 ? void 0 : peerConn_4.getSenders().forEach(function (sender) {
                             if (sender.track && sender.track.kind === 'video') {
                                 sender.replaceTrack(track);
                             }
                         });
                     });
-                    if (_this._appEventHandler) {
-                        _this._appEventHandler('input.stream.update', {
-                            obj: _this,
-                            audio: false,
-                            video: true
-                        });
-                    }
                 }
             });
         };
@@ -1037,6 +1087,7 @@ var SipCall = (function () {
         this._localMedia = [];
         this._remoteMedia = [];
         this._additionalInfo = additionalInfo;
+        this._shareScreen = false;
         this._modifySdp = false;
         this._audioCodecs = ['G722', 'PCMA', 'PCMU', 'telephone-event', 'CN'];
         this._videoCodecs = ['H264'];

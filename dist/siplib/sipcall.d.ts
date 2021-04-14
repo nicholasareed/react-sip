@@ -63,6 +63,7 @@ export declare class SipCall {
     _videoCodecs: string[];
     _tones: any;
     _appEventHandler: AppCallEventHandler | null;
+    _shareScreen: boolean;
     startTime: string | undefined;
     endTime: string | undefined;
     remoteUri: string;
@@ -130,6 +131,10 @@ export declare class SipCall {
     toggleVideoMute: () => void;
     isAudioOnMute: () => boolean;
     isVideoOnMute: () => boolean;
+    startScreenShare: () => void;
+    stopScreenShare: () => void;
+    toggleScreenShare: () => void;
+    isScreenShareOn: () => boolean;
     blindTransfer: (target: string) => void;
     attendedTransfer: (replaceCall: SipCall) => void;
     parkCall: (dest: string) => void;

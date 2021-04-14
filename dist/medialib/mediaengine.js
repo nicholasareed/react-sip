@@ -88,6 +88,7 @@ var MediaEngine = (function () {
                         _this._inStreamContexts.push({
                             id: reqId,
                             hasVideo: video,
+                            hasScreenMedia: false,
                             srcNode: audioSource,
                             destNode: audioDest,
                             gainNode: gainNode,
@@ -210,6 +211,64 @@ var MediaEngine = (function () {
                     }
                 }
             }
+        };
+        this.startScreenCapture = function (reqId) {
+            var screenShareSettings = _this._config.screenShare;
+            var constraints = {
+                video: {
+                    cursor: screenShareSettings.cursor,
+                    logicalSurface: screenShareSettings.logicalSurface,
+                },
+                audio: screenShareSettings.screenAudio
+            };
+            return navigator.mediaDevices.getDisplayMedia(constraints)
+                .then(function (stream) {
+                var context = _this._inStreamContexts.find(function (item) { return item.id === reqId; });
+                if (context === undefined) {
+                    console.log('error: stream context not found');
+                    return Promise.resolve(null);
+                }
+                context.amplStream.getVideoTracks().forEach(function (track) {
+                    track.enabled = false;
+                    track.stop();
+                    context.amplStream.removeTrack(track);
+                });
+                context.hasVideo = false;
+                stream.getTracks().forEach(function (track) {
+                    context.amplStream.addTrack(track);
+                });
+                context.hasScreenMedia = true;
+                return Promise.resolve(context.amplStream);
+            }).catch(function (err) {
+                console.log(err);
+                return Promise.resolve(null);
+            });
+        };
+        this.stopScreenCapture = function (reqId, resumeVideo) {
+            var ctxt = _this._inStreamContexts.find(function (item) { return item.id === reqId; });
+            if (ctxt === undefined) {
+                return Promise.resolve(null);
+            }
+            if (ctxt.hasScreenMedia) {
+                ctxt.amplStream.getVideoTracks().forEach(function (track) {
+                    track.enabled = false;
+                    track.stop();
+                    ctxt.amplStream.removeTrack(track);
+                });
+                ctxt.hasScreenMedia = false;
+            }
+            if (resumeVideo) {
+                var opts = _this._getMediaConstraints(false, true);
+                return navigator.mediaDevices.getUserMedia(opts).then(function (mediaStream) {
+                    mediaStream.getVideoTracks().forEach(function (track) {
+                        ctxt.amplStream.addTrack(track);
+                    });
+                }).then(function () {
+                    ctxt.hasVideo = true;
+                    return Promise.resolve(ctxt.amplStream);
+                });
+            }
+            return Promise.resolve(ctxt.amplStream);
         };
         this.muteAudio = function () {
             _this._enableAudioChannels(false);
@@ -389,21 +448,23 @@ var MediaEngine = (function () {
             }
             _this._changeDeviceConfig('videoinput', deviceId);
             _this._inStreamContexts.forEach(function (ctxt) {
-                var reqId = ctxt.id;
-                var amplStream = ctxt.amplStream;
-                amplStream.getVideoTracks().forEach(function (track) {
-                    track.enabled = false;
-                    track.stop();
-                    amplStream.removeTrack(track);
-                });
-                var opts = _this._getMediaConstraints(false, true);
-                navigator.mediaDevices.getUserMedia(opts).then(function (mediaStream) {
-                    mediaStream.getVideoTracks().forEach(function (track) {
-                        ctxt.amplStream.addTrack(track);
+                if (!ctxt.hasScreenMedia) {
+                    var reqId_1 = ctxt.id;
+                    var amplStream_1 = ctxt.amplStream;
+                    amplStream_1.getVideoTracks().forEach(function (track) {
+                        track.enabled = false;
+                        track.stop();
+                        amplStream_1.removeTrack(track);
                     });
-                }).then(function () {
-                    _this._eventEmitter.emit('video.input.update', { 'reqId': reqId, 'stream': ctxt.amplStream });
-                });
+                    var opts = _this._getMediaConstraints(false, true);
+                    navigator.mediaDevices.getUserMedia(opts).then(function (mediaStream) {
+                        mediaStream.getVideoTracks().forEach(function (track) {
+                            ctxt.amplStream.addTrack(track);
+                        });
+                    }).then(function () {
+                        _this._eventEmitter.emit('video.input.update', { 'reqId': reqId_1, 'stream': ctxt.amplStream });
+                    });
+                }
             });
         };
         this.getConfiguredDevice = function (deviceKind) {
@@ -583,20 +644,26 @@ var MediaEngine = (function () {
             var constraints = {
                 audio: isAudio,
             };
-            if (isVideo) {
-                constraints['video'] = true;
-            }
             if (isAudio &&
                 _this._config.audio.in.deviceIds.length > 0) {
                 constraints.audio = {
                     deviceId: _this._config.audio.in.deviceIds,
                 };
             }
-            if (isVideo &&
-                _this._config.video.in.deviceIds.length > 0) {
-                constraints.video = {
-                    deviceId: _this._config.video.in.deviceIds,
-                };
+            if (isVideo) {
+                if (_this._config.video.in.deviceIds.length > 0) {
+                    constraints.video = {
+                        deviceId: _this._config.video.in.deviceIds,
+                        width: _this._config.video.width,
+                        height: _this._config.video.height
+                    };
+                }
+                else {
+                    constraints.video = {
+                        width: _this._config.video.width,
+                        height: _this._config.video.height,
+                    };
+                }
             }
             return constraints;
         };
@@ -636,7 +703,14 @@ var MediaEngine = (function () {
                         enabled: false,
                         deviceIds: [],
                     },
+                    width: 1280,
+                    height: 720
                 },
+                screenShare: {
+                    cursor: 'always',
+                    logicalSurface: false,
+                    screenAudio: false
+                }
             };
             var audioOut = this._config.audio.out;
             audioOut.element = window.document.createElement('audio');

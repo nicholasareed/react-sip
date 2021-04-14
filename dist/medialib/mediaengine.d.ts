@@ -17,6 +17,13 @@ export interface MediaEngineConfig {
     video: {
         in: VideoConfig;
         out: VideoConfig;
+        width: number;
+        height: number;
+    };
+    screenShare: {
+        cursor: string;
+        logicalSurface: boolean;
+        screenAudio: false;
     };
 }
 export interface MediaDevice {
@@ -27,6 +34,7 @@ export interface MediaDevice {
 export interface InputStreamContext {
     id: string;
     hasVideo: boolean;
+    hasScreenMedia: boolean;
     srcNode: MediaStreamAudioSourceNode;
     destNode: MediaStreamAudioDestinationNode;
     gainNode: GainNode;
@@ -59,6 +67,8 @@ export declare class MediaEngine {
     closeStream: (reqId: string) => void;
     closeAll: () => void;
     startOrUpdateOutStreams: (reqId: string, mediaStream: MediaStream | null, track: MediaStreamTrack) => void;
+    startScreenCapture: (reqId: string) => Promise<MediaStream | null>;
+    stopScreenCapture: (reqId: string, resumeVideo: boolean) => Promise<MediaStream | null>;
     muteAudio: () => void;
     unMuteAudio: () => void;
     playTone: (name: string | any, continuous?: boolean) => any;
