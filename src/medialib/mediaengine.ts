@@ -27,7 +27,14 @@ export interface MediaEngineConfig {
   };
   video: {
     in: VideoConfig,
-    out: VideoConfig
+    out: VideoConfig,
+    width: number,
+    height: number,
+  };
+  screenShare: {
+    cursor: string,
+    logicalSurface: boolean,
+    screenAudio: false
   };
 }
 export interface MediaDevice {
@@ -38,6 +45,7 @@ export interface MediaDevice {
 export interface InputStreamContext {
   id: string;
   hasVideo: boolean;
+  hasScreenMedia: boolean;
   srcNode: MediaStreamAudioSourceNode;
   destNode: MediaStreamAudioDestinationNode;
   gainNode: GainNode;
@@ -135,6 +143,7 @@ export class MediaEngine {
       this._inStreamContexts.push({
         id: reqId,
         hasVideo: video,
+        hasScreenMedia: false,
         srcNode: audioSource,
         destNode: audioDest,
         gainNode,
@@ -270,6 +279,75 @@ export class MediaEngine {
         }
       }
     }
+  };
+  // todo: screen audio
+  startScreenCapture = (reqId: string): Promise<MediaStream | null> => {
+    // screenshare constraints
+    const screenShareSettings = this._config!.screenShare;
+    const constraints = {
+      video : {
+        cursor: screenShareSettings.cursor,
+        logicalSurface: screenShareSettings.logicalSurface,
+      },
+      audio: screenShareSettings.screenAudio
+    };
+    // @ts-ignore
+    return navigator.mediaDevices.getDisplayMedia(constraints)
+      .then((stream) => {
+        // find the input stream context
+        const context = this._inStreamContexts.find((item) => item.id === reqId);
+        if (context === undefined) {
+          // tslint:disable-next-line:no-console
+          console.log('error: stream context not found');
+          return Promise.resolve(null);
+        }
+        // remove the existing video
+        context.amplStream.getVideoTracks().forEach((track) => {
+          track.enabled = false;
+          track.stop();
+          context.amplStream.removeTrack(track);
+        });
+        context.hasVideo = false;
+        // add the screen media
+        stream.getTracks().forEach((track) => {
+          context.amplStream.addTrack(track);
+        });
+        context.hasScreenMedia = true;
+        return Promise.resolve(context.amplStream);
+      }).catch((err) => {
+        // tslint:disable-next-line:no-console
+        console.log(err);
+        return Promise.resolve(null);
+      })
+  };
+  stopScreenCapture = (reqId: string, resumeVideo: boolean): Promise<MediaStream | null> => {
+    // find input stream context
+    const ctxt = this._inStreamContexts.find((item) => item.id === reqId);
+    if (ctxt === undefined) {
+      // error
+      return Promise.resolve(null);
+    }
+    if (ctxt.hasScreenMedia) {
+      ctxt.amplStream.getVideoTracks().forEach((track) => {
+        track.enabled = false;
+        track.stop()
+        ctxt.amplStream.removeTrack(track);
+      });
+      ctxt.hasScreenMedia = false;
+    }
+    // capture video
+    if (resumeVideo) {
+      const opts = this._getMediaConstraints(false, true);
+      return navigator.mediaDevices.getUserMedia(opts).then((mediaStream) => {
+        mediaStream.getVideoTracks().forEach((track) => {
+          ctxt.amplStream.addTrack(track);
+        })
+      }).then(() => {
+        ctxt.hasVideo = true;
+        return Promise.resolve(ctxt.amplStream);
+      })
+    }
+    return Promise.resolve(ctxt.amplStream);
   };
   muteAudio = (): void => {
     this._enableAudioChannels(false);
@@ -455,21 +533,24 @@ export class MediaEngine {
     }
     this._changeDeviceConfig('videoinput', deviceId);
     this._inStreamContexts.forEach((ctxt) => {
-      const reqId = ctxt.id;
-      const amplStream = ctxt.amplStream;
-      amplStream.getVideoTracks().forEach((track) => {
-        track.enabled = false;
-        track.stop();
-        amplStream.removeTrack(track);
-      });
-      const opts = this._getMediaConstraints(false, true);
-      navigator.mediaDevices.getUserMedia(opts).then((mediaStream) => {
-        mediaStream.getVideoTracks().forEach((track) => {
-          ctxt.amplStream.addTrack(track);
-        })
-      }).then(() => {
-        this._eventEmitter.emit('video.input.update', {'reqId': reqId, 'stream': ctxt.amplStream});
-      });
+      // skip if it is a screen share session
+      if (!ctxt.hasScreenMedia) {
+        const reqId = ctxt.id;
+        const amplStream = ctxt.amplStream;
+        amplStream.getVideoTracks().forEach((track) => {
+          track.enabled = false;
+          track.stop();
+          amplStream.removeTrack(track);
+        });
+        const opts = this._getMediaConstraints(false, true);
+        navigator.mediaDevices.getUserMedia(opts).then((mediaStream) => {
+          mediaStream.getVideoTracks().forEach((track) => {
+            ctxt.amplStream.addTrack(track);
+          })
+        }).then(() => {
+          this._eventEmitter.emit('video.input.update', {'reqId': reqId, 'stream': ctxt.amplStream});
+        });
+      }
     });
   };
   getConfiguredDevice = (deviceKind: string): string => {
@@ -565,9 +646,16 @@ export class MediaEngine {
             enabled: false,
             deviceIds: [],
           },
+          width: 1280,
+          height: 720
         },
+        screenShare: {
+          cursor: 'always',
+          logicalSurface: false,
+          screenAudio: false
+        }
       };
-      const audioOut = this._config.audio.out;
+      const audioOut = this._config!.audio.out;
       audioOut.element = window.document.createElement('audio') as WebAudioHTMLMediaElement;
       audioOut.element.setSinkId(audioOut.deviceIds[0]);
       audioOut.element.autoplay = true;
@@ -716,9 +804,6 @@ export class MediaEngine {
     const constraints: MediaStreamConstraints = {
       audio: isAudio,
     };
-    if (isVideo) {
-      constraints['video'] = true;
-    }
     // if configured use the configured device
     if (isAudio &&
       // @ts-ignore
@@ -728,13 +813,21 @@ export class MediaEngine {
         deviceId: this._config.audio.in.deviceIds,
       };
     }
-    if (isVideo &&
+    if (isVideo) {
       // @ts-ignore
-      this._config.video.in.deviceIds.length > 0) {
-      constraints.video = {
-        // @ts-ignore
-        deviceId: this._config.video.in.deviceIds,
-      };
+      if (this._config.video.in.deviceIds.length > 0) {
+        constraints.video = {
+          // @ts-ignore
+          deviceId: this._config.video.in.deviceIds,
+          width: this._config!.video.width,
+          height:this._config!.video.height
+        };
+      } else {
+        constraints.video = {
+          width: this._config!.video.width,
+          height: this._config!.video.height,
+        }
+      }
     }
     return constraints;
   };

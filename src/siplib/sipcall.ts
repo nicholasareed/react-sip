@@ -109,6 +109,7 @@ export class SipCall {
   _videoCodecs: string[]; // video codecs for the call
   _tones: any;
   _appEventHandler: AppCallEventHandler | null;
+  _shareScreen: boolean;
   // instance access
   startTime: string | undefined;
   endTime: string | undefined;
@@ -147,6 +148,7 @@ export class SipCall {
     this._localMedia = [];
     this._remoteMedia = [];
     this._additionalInfo = additionalInfo;
+    this._shareScreen = false;
     // configurable parameters
     this._modifySdp = false;
     this._audioCodecs = ['G722', 'PCMA', 'PCMU', 'telephone-event', 'CN'];
@@ -777,7 +779,76 @@ export class SipCall {
   };
   isVideoOnMute = (): boolean => {
     return this._mediaDeviceStatus.video === MEDIA_DEVICE_STATUS_MUTE;
-  }
+  };
+  startScreenShare = (): void => {
+    if (!this.isSessionActive()) {
+      throw new Error('RtcSession is not active');
+    }
+    if (this.getCallStatus() !== CALL_STATUS_ACTIVE) {
+      throw new Error(
+        `Start Screenshare is not allowed when call status is ${this.getCallStatus()}`,
+      );
+    }
+    this._mediaEngine.startScreenCapture(this.getId()).then((mediaStream) => {
+      if (mediaStream) {
+        const peerConn = this._peerConnection;
+        mediaStream.getVideoTracks().forEach((track) => {
+          peerConn?.getSenders().forEach((sender) => {
+            if (sender.track && sender.track.kind === 'video') {
+              sender.replaceTrack(track);
+            }
+          });
+        });
+        this._shareScreen = true;
+        // send the event to app event handler
+        const ssTrack = mediaStream.getVideoTracks()[0];
+        ssTrack.addEventListener('ended', () => {
+          if (this._shareScreen) {
+            this.stopScreenShare();
+          }
+        });
+        this._eventEmitter.emit('call.update', {'call': this});
+      }
+    });
+  };
+  stopScreenShare = (): void => {
+    if (!this.isSessionActive()) {
+      throw new Error('RtcSession is not active');
+    }
+    if (this.getCallStatus() !== CALL_STATUS_ACTIVE) {
+      throw new Error(
+        `Stop Screenshare is not allowed when call status is ${this.getCallStatus()}`,
+      );
+    }
+    if (!this._shareScreen) {
+      throw new Error('Screen share session is not active');
+    }
+    this._shareScreen = false;
+    this._mediaEngine.stopScreenCapture(this.getId(), true).then((mediaStream) => {
+      if (mediaStream) {
+        const peerConn = this._peerConnection;
+        mediaStream.getVideoTracks().forEach((track) => {
+          peerConn?.getSenders().forEach((sender) => {
+            if (sender.track && sender.track.kind === 'video') {
+              sender.replaceTrack(track);
+            }
+          });
+        });
+        // send the event to app event handler
+        this._eventEmitter.emit('call.update', {'call': this});
+      }
+    });
+  };
+  toggleScreenShare = () => {
+    if (this._shareScreen) {
+      this.stopScreenShare();
+    } else {
+      this.startScreenShare();
+    }
+  };
+  isScreenShareOn = () => {
+    return this._shareScreen;
+  };
   /*
    * Blind transfer
    * Transferor sends target uri to transferee using REFER
@@ -1326,6 +1397,7 @@ export class SipCall {
           });
         });
       }
+      /*
       if (this._appEventHandler) {
         this._appEventHandler(
           'input.stream.modified',
@@ -1336,6 +1408,7 @@ export class SipCall {
           }
         );
       }
+       */
     });
     this._eventEmitter.on('audio.output.update', (event) => {
       // handle output update
@@ -1352,6 +1425,7 @@ export class SipCall {
             }
           });
         });
+        /*
         if (this._appEventHandler) {
           this._appEventHandler(
             'input.stream.update',
@@ -1362,6 +1436,7 @@ export class SipCall {
             }
           );
         }
+        */
       }
     });
   };
