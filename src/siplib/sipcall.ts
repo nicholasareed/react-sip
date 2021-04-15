@@ -605,7 +605,6 @@ export class SipCall {
       this.hold();
     }
   };
-
   isOnLocalHold = (): boolean => {
     if (!this.isSessionActive()) {
       return false;
@@ -701,6 +700,12 @@ export class SipCall {
       extraHeaders: this.getExtraHeaders().invite,
     };
     return this.getRTCSession()!.renegotiate(options);
+  };
+  amplifySpeakerOn = (multiplier: number) => {
+    this._mediaEngine.amplifyAudioOn(this.getId(), multiplier);
+  };
+  amplifySpeakerOff = () => {
+    this._mediaEngine.amplifyAudioOff(this.getId());
   };
   _mute = (isAudio: boolean=true): void => {
     if (!this.isSessionActive()) {

@@ -55,7 +55,12 @@ export interface InputStreamContext {
 export interface OutputStreamContext {
   id: string;
   stream: MediaStream;
+  src: MediaStreamAudioSourceNode;
+  dest: MediaStreamAudioDestinationNode;
+  gainNode: GainNode;
   volume: number;
+  amplified: boolean; // volume amplified or  not
+  multiplier: number; // amplification multiplier
 }
 export class MediaEngine {
   _config: MediaEngineConfig | null;
@@ -215,6 +220,10 @@ export class MediaEngine {
     const outIndex = this._outStreamContexts.findIndex(
       (item) => item.id === reqId);
     if (outIndex !== -1) {
+      const outCtxt = this._outStreamContexts[outIndex];
+      outCtxt.dest.disconnect();
+      outCtxt.gainNode.disconnect();
+      outCtxt.src.disconnect();
       this._outStreamContexts.splice(outIndex, 1);
     }
   };
@@ -233,6 +242,11 @@ export class MediaEngine {
         track.stop();
       });
     });
+    this._outStreamContexts.forEach((outCtxt) => {
+      outCtxt.src.disconnect();
+      outCtxt.gainNode.disconnect();
+      outCtxt.dest.disconnect();
+    });
     this._inStreamContexts = [];
     this._outStreamContexts = [];
     this._isPlaying = false;
@@ -243,6 +257,7 @@ export class MediaEngine {
     if (!this._isPlaying) {
       this._isPlaying = true;
     }
+    const outContext = this._outStreamContexts.find((item) => item.id === reqId);
     // if valid add the track
     if (mediaStream) {
       const trackExists = mediaStream.getTracks().find((t) => t.id === track.id);
@@ -250,32 +265,37 @@ export class MediaEngine {
         mediaStream.removeTrack(trackExists);
       }
       mediaStream.addTrack(track);
+
       if (track.kind === 'audio') {
         const element = this._config!.audio.out.element;
         if (element) {
           element.srcObject = mediaStream;
         }
       }
-      const outContext = this._outStreamContexts.find((item) => item.id === reqId);
+
       // new context
       if (outContext === undefined) {
         if (track.kind === 'audio') {
           const element = this._config!.audio.out.element;
-          let vol = this._outputVolume;
-          if (!this._outStreamContexts.length && element) {
-            element.volume = this._outputVolume;
-          } else {
-            vol = this._outStreamContexts[0].volume;
+          const src = this._audioContext.createMediaStreamSource(mediaStream);
+          const dest = this._audioContext.createMediaStreamDestination();
+          const gainNode = this._audioContext.createGain();
+          src.connect(gainNode);
+          gainNode.connect(dest);
+          gainNode.gain.value = this._outputVolume * 2;
+          if (element) {
+            element.srcObject = dest.stream;
           }
           this._outStreamContexts.push({
             id: reqId,
             stream: mediaStream,
-            volume: vol
+            src,
+            dest,
+            gainNode,
+            volume: this._outputVolume,
+            amplified: false,
+            multiplier: 1
           });
-        }
-      } else {
-        if (outContext.stream.id !== mediaStream.id) {
-          outContext.stream = mediaStream;
         }
       }
     }
@@ -398,15 +418,12 @@ export class MediaEngine {
     if (value > 1) {
       value = 1;
     }
-    const streamCtxt = this._outStreamContexts.find((item) => item.id === reqId);
+    const streamCtxt = this._outStreamContexts.find(
+      (item) => item.id === reqId);
     if (streamCtxt !== undefined) {
-      const audioElement = this._config?.audio.out.element;
-      audioElement!.volume = value;
-      // currently volume is set on the element
-      // not using audio nodes
-      this._outStreamContexts.forEach((ctxt) => {
-        ctxt.volume = value;
-      });
+      const { multiplier } = streamCtxt;
+      streamCtxt.gainNode.gain.value = value * multiplier * 2;
+      streamCtxt.volume = value;
     }
   };
   // change input volume
@@ -516,6 +533,7 @@ export class MediaEngine {
       });
     });
   };
+  // NOT TESTED: Chrome always play audio through default output device
   changeAudioOutput = (deviceId: string): void => {
     if (!this.hasDeviceExists('audiooutput', deviceId)) {
       throw Error(`audiooutput device with id ${deviceId} not found`);
@@ -553,6 +571,33 @@ export class MediaEngine {
       }
     });
   };
+  // used to amplify audio above 100%
+  amplifyAudioOn = (reqId: string, multiplier:number): void => {
+    // multiplier should be greater than 1
+    if (multiplier <= 1) {
+      return;
+    }
+    const outCtxt = this._outStreamContexts.find(
+      (item) => item.id === reqId);
+    if (outCtxt !== undefined) {
+      const gainNode = outCtxt.gainNode;
+      gainNode.gain.value = outCtxt.volume * 2 * multiplier;
+      outCtxt.amplified = true;
+      outCtxt.multiplier = multiplier;
+    }
+  };
+  // stop amplification
+  amplifyAudioOff = (reqId: string): void => {
+    const outCtxt = this._outStreamContexts.find(
+      (item) => item.id === reqId);
+    if (outCtxt !== undefined && outCtxt.amplified) {
+      const gainNode = outCtxt.gainNode;
+      gainNode.gain.value = outCtxt.volume * 2;
+      outCtxt.amplified = false;
+      outCtxt.multiplier = 1;
+    }
+  };
+
   getConfiguredDevice = (deviceKind: string): string => {
     let deviceId = 'default';
     const devices = this._availableDevices.filter((item) => item.kind === deviceKind);
