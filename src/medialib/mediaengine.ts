@@ -104,8 +104,13 @@ export class MediaEngine {
     return this._availableDevices;
   };
 
+  // not used by application
+  // should not allow re-configure in the middle of sessions
   reConfigure = (config: MediaEngineConfig): void => {
-    this._prepareConfig(config);
+    if (this._inStreamContexts.length === 0 &&
+        this._outStreamContexts.length === 0) {
+      this._prepareConfig(config);
+    }
   };
   // Open
   openStreams = async (reqId: string,
@@ -114,8 +119,7 @@ export class MediaEngine {
     // tslint:disable-next-line:no-console
     // console.log(this._availableDevices);
     const opts = this._getMediaConstraints(audio, video);
-
-    // If already capturing
+    // todo: failure scenarios like user cancel the permissions
     return navigator.mediaDevices.getUserMedia(opts).then((mediaStream) => {
       const audioSource = this._audioContext.createMediaStreamSource(mediaStream);
       const audioDest = this._audioContext.createMediaStreamDestination();
@@ -156,6 +160,10 @@ export class MediaEngine {
         amplStream: newStream
       });
       return Promise.resolve(newStream);
+    }).catch((err) => {
+      // tslint:disable-next-line:no-console
+      console.log(err);
+      return Promise.resolve(null);
     });
   };
   // update stream with audio/video
@@ -168,6 +176,7 @@ export class MediaEngine {
       const streamContext = this._inStreamContexts[index];
       const appStream = streamContext.amplStream;
       streamContext.hasVideo = video;
+      // todo: test for adding audio
       if (audio) {
         appStream.getAudioTracks().forEach((track) => {
           track.enabled = false;
@@ -186,8 +195,8 @@ export class MediaEngine {
       return navigator.mediaDevices.getUserMedia(opts).then((mediaStream) => {
         // currently update is used to add video
         // Video tracks are not routed through Gain Node
-        // TODO: if audio is added
-        mediaStream.getTracks().forEach((track) => {
+        // todo: handle audio scenario
+        mediaStream.getVideoTracks().forEach((track) => {
           appStream!.addTrack(track);
         });
         return Promise.resolve(appStream);
@@ -266,13 +275,6 @@ export class MediaEngine {
       }
       mediaStream.addTrack(track);
 
-      if (track.kind === 'audio') {
-        const element = this._config!.audio.out.element;
-        if (element) {
-          element.srcObject = mediaStream;
-        }
-      }
-
       // new context
       if (outContext === undefined) {
         if (track.kind === 'audio') {
@@ -296,6 +298,13 @@ export class MediaEngine {
             amplified: false,
             multiplier: 1
           });
+        }
+      } else {
+        if (track.kind === 'audio') {
+          const element = this._config!.audio.out.element;
+          if (element) {
+            element.srcObject = mediaStream;
+          }
         }
       }
     }
@@ -666,6 +675,7 @@ export class MediaEngine {
         break;
     }
   };
+  // todo: multiple devices per channel
   _prepareConfig(config: MediaEngineConfig | null) {
     if (!config) {
       // Default config
