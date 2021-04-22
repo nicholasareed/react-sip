@@ -178,7 +178,6 @@ var SipCall = (function () {
         };
         this.changeOutputVolume = function (vol) {
             _this._mediaEngine.changeOutStreamVolume(_this.getId(), vol);
-            _this._eventEmitter.emit('call.update', { 'call': _this });
         };
         this.getOutputVolume = function () {
             return _this._mediaEngine.getOutStreamVolume(_this.getId());
@@ -486,6 +485,12 @@ var SipCall = (function () {
                 extraHeaders: _this.getExtraHeaders().invite,
             };
             return _this.getRTCSession().renegotiate(options);
+        };
+        this.amplifySpeakerOn = function (multiplier) {
+            _this._mediaEngine.amplifyAudioOn(_this.getId(), multiplier);
+        };
+        this.amplifySpeakerOff = function () {
+            _this._mediaEngine.amplifyAudioOff(_this.getId());
         };
         this._mute = function (isAudio) {
             if (isAudio === void 0) { isAudio = true; }

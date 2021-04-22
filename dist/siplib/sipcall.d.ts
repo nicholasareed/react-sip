@@ -121,6 +121,8 @@ export declare class SipCall {
     changeInputVolume: (vol: number) => void;
     getInputVolume: () => number;
     renegotiate: () => boolean;
+    amplifySpeakerOn: (multiplier: number) => void;
+    amplifySpeakerOff: () => void;
     _mute: (isAudio?: boolean) => void;
     _unmute: (isAudio?: boolean) => void;
     muteAudio: () => void;

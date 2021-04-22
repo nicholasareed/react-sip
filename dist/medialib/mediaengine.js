@@ -61,7 +61,10 @@ var MediaEngine = (function () {
             return _this._availableDevices;
         };
         this.reConfigure = function (config) {
-            _this._prepareConfig(config);
+            if (_this._inStreamContexts.length === 0 &&
+                _this._outStreamContexts.length === 0) {
+                _this._prepareConfig(config);
+            }
         };
         this.openStreams = function (reqId, audio, video) { return __awaiter(_this, void 0, void 0, function () {
             var opts;
@@ -96,6 +99,9 @@ var MediaEngine = (function () {
                             amplStream: newStream
                         });
                         return Promise.resolve(newStream);
+                    }).catch(function (err) {
+                        console.log(err);
+                        return Promise.resolve(null);
                     })];
             });
         }); };
@@ -121,7 +127,7 @@ var MediaEngine = (function () {
                 }
                 var opts = _this._getMediaConstraints(audio, video);
                 return navigator.mediaDevices.getUserMedia(opts).then(function (mediaStream) {
-                    mediaStream.getTracks().forEach(function (track) {
+                    mediaStream.getVideoTracks().forEach(function (track) {
                         appStream_1.addTrack(track);
                     });
                     return Promise.resolve(appStream_1);
@@ -150,6 +156,10 @@ var MediaEngine = (function () {
             }
             var outIndex = _this._outStreamContexts.findIndex(function (item) { return item.id === reqId; });
             if (outIndex !== -1) {
+                var outCtxt = _this._outStreamContexts[outIndex];
+                outCtxt.dest.disconnect();
+                outCtxt.gainNode.disconnect();
+                outCtxt.src.disconnect();
                 _this._outStreamContexts.splice(outIndex, 1);
             }
         };
@@ -167,6 +177,11 @@ var MediaEngine = (function () {
                     track.stop();
                 });
             });
+            _this._outStreamContexts.forEach(function (outCtxt) {
+                outCtxt.src.disconnect();
+                outCtxt.gainNode.disconnect();
+                outCtxt.dest.disconnect();
+            });
             _this._inStreamContexts = [];
             _this._outStreamContexts = [];
             _this._isPlaying = false;
@@ -175,39 +190,43 @@ var MediaEngine = (function () {
             if (!_this._isPlaying) {
                 _this._isPlaying = true;
             }
+            var outContext = _this._outStreamContexts.find(function (item) { return item.id === reqId; });
             if (mediaStream) {
                 var trackExists = mediaStream.getTracks().find(function (t) { return t.id === track.id; });
                 if (trackExists) {
                     mediaStream.removeTrack(trackExists);
                 }
                 mediaStream.addTrack(track);
-                if (track.kind === 'audio') {
-                    var element = _this._config.audio.out.element;
-                    if (element) {
-                        element.srcObject = mediaStream;
-                    }
-                }
-                var outContext = _this._outStreamContexts.find(function (item) { return item.id === reqId; });
                 if (outContext === undefined) {
                     if (track.kind === 'audio') {
                         var element = _this._config.audio.out.element;
-                        var vol = _this._outputVolume;
-                        if (!_this._outStreamContexts.length && element) {
-                            element.volume = _this._outputVolume;
-                        }
-                        else {
-                            vol = _this._outStreamContexts[0].volume;
+                        var src = _this._audioContext.createMediaStreamSource(mediaStream);
+                        var dest = _this._audioContext.createMediaStreamDestination();
+                        var gainNode = _this._audioContext.createGain();
+                        src.connect(gainNode);
+                        gainNode.connect(dest);
+                        gainNode.gain.value = _this._outputVolume * 2;
+                        if (element) {
+                            element.srcObject = dest.stream;
                         }
                         _this._outStreamContexts.push({
                             id: reqId,
                             stream: mediaStream,
-                            volume: vol
+                            src: src,
+                            dest: dest,
+                            gainNode: gainNode,
+                            volume: _this._outputVolume,
+                            amplified: false,
+                            multiplier: 1
                         });
                     }
                 }
                 else {
-                    if (outContext.stream.id !== mediaStream.id) {
-                        outContext.stream = mediaStream;
+                    if (track.kind === 'audio') {
+                        var element = _this._config.audio.out.element;
+                        if (element) {
+                            element.srcObject = mediaStream;
+                        }
                     }
                 }
             }
@@ -315,17 +334,14 @@ var MediaEngine = (function () {
             _this._inputVolume = vol;
         };
         this.changeOutStreamVolume = function (reqId, value) {
-            var _a;
             if (value > 1) {
                 value = 1;
             }
             var streamCtxt = _this._outStreamContexts.find(function (item) { return item.id === reqId; });
             if (streamCtxt !== undefined) {
-                var audioElement = (_a = _this._config) === null || _a === void 0 ? void 0 : _a.audio.out.element;
-                audioElement.volume = value;
-                _this._outStreamContexts.forEach(function (ctxt) {
-                    ctxt.volume = value;
-                });
+                var multiplier = streamCtxt.multiplier;
+                streamCtxt.gainNode.gain.value = value * multiplier * 2;
+                streamCtxt.volume = value;
             }
         };
         this.changeInStreamVolume = function (reqId, vol) {
@@ -466,6 +482,27 @@ var MediaEngine = (function () {
                     });
                 }
             });
+        };
+        this.amplifyAudioOn = function (reqId, multiplier) {
+            if (multiplier <= 1) {
+                return;
+            }
+            var outCtxt = _this._outStreamContexts.find(function (item) { return item.id === reqId; });
+            if (outCtxt !== undefined) {
+                var gainNode = outCtxt.gainNode;
+                gainNode.gain.value = outCtxt.volume * 2 * multiplier;
+                outCtxt.amplified = true;
+                outCtxt.multiplier = multiplier;
+            }
+        };
+        this.amplifyAudioOff = function (reqId) {
+            var outCtxt = _this._outStreamContexts.find(function (item) { return item.id === reqId; });
+            if (outCtxt !== undefined && outCtxt.amplified) {
+                var gainNode = outCtxt.gainNode;
+                gainNode.gain.value = outCtxt.volume * 2;
+                outCtxt.amplified = false;
+                outCtxt.multiplier = 1;
+            }
         };
         this.getConfiguredDevice = function (deviceKind) {
             var deviceId = 'default';

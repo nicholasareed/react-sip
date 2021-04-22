@@ -44,7 +44,12 @@ export interface InputStreamContext {
 export interface OutputStreamContext {
     id: string;
     stream: MediaStream;
+    src: MediaStreamAudioSourceNode;
+    dest: MediaStreamAudioDestinationNode;
+    gainNode: GainNode;
     volume: number;
+    amplified: boolean;
+    multiplier: number;
 }
 export declare class MediaEngine {
     _config: MediaEngineConfig | null;
@@ -87,6 +92,8 @@ export declare class MediaEngine {
     changeAudioInput: (deviceId: string) => void;
     changeAudioOutput: (deviceId: string) => void;
     changeVideoInput: (deviceId: string) => void;
+    amplifyAudioOn: (reqId: string, multiplier: number) => void;
+    amplifyAudioOff: (reqId: string) => void;
     getConfiguredDevice: (deviceKind: string) => string;
     _changeDeviceConfig: (deviceKind: string, deviceId: string) => void;
     _flushDeviceConfig: (deviceKind: string, deviceId: string) => void;
