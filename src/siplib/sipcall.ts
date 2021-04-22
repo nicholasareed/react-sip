@@ -330,7 +330,6 @@ export class SipCall {
   };
   changeOutputVolume = (vol: number): void => {
     this._mediaEngine.changeOutStreamVolume(this.getId(), vol);
-    this._eventEmitter.emit('call.update', {'call': this});
   };
   getOutputVolume = (): number => {
     return this._mediaEngine.getOutStreamVolume(this.getId());
@@ -605,7 +604,6 @@ export class SipCall {
       this.hold();
     }
   };
-
   isOnLocalHold = (): boolean => {
     if (!this.isSessionActive()) {
       return false;
@@ -701,6 +699,12 @@ export class SipCall {
       extraHeaders: this.getExtraHeaders().invite,
     };
     return this.getRTCSession()!.renegotiate(options);
+  };
+  amplifySpeakerOn = (multiplier: number) => {
+    this._mediaEngine.amplifyAudioOn(this.getId(), multiplier);
+  };
+  amplifySpeakerOff = () => {
+    this._mediaEngine.amplifyAudioOff(this.getId());
   };
   _mute = (isAudio: boolean=true): void => {
     if (!this.isSessionActive()) {
@@ -961,13 +965,12 @@ export class SipCall {
     this._transferStatus = TRANSFER_STATUS_FAILED;
   };
   _handleRemoteTrack = (track: MediaStreamTrack): void => {
-    // todo: pass stream updates to the UI
     this._mediaEngine.startOrUpdateOutStreams(
       this.getId(),
       this._outputMediaStream,
       track
     );
-
+    // todo: should we pass audio stream event to app ?
     if (this._appEventHandler) {
       this._appEventHandler(
         'output.stream.modified',
@@ -978,7 +981,6 @@ export class SipCall {
         }
       );
     }
-
   };
   _handleLocalSdp = (sdp: string): string => {
     const sdpObj = sdpTransform.parse(sdp);
