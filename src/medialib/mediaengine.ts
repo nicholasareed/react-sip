@@ -1,4 +1,11 @@
-import { WebAudioHTMLMediaElement } from "..";
+import {
+  VIDEO_RES_QVGA,
+  VIDEO_RES_VGA,
+  VIDEO_RES_720P,
+  VIDEO_RES_1080P,
+  VideoResolutionOptions,
+  WebAudioHTMLMediaElement
+} from "..";
 
 import * as EventEmitter from 'eventemitter3';
 import * as FILES from '../sounds.json';
@@ -27,9 +34,7 @@ export interface MediaEngineConfig {
   };
   video: {
     in: VideoConfig,
-    out: VideoConfig,
-    width: number,
-    height: number,
+    out: VideoConfig
   };
   screenShare: {
     cursor: string,
@@ -68,6 +73,7 @@ export class MediaEngine {
   _outputVolume: number;
   _inputVolume: number;
   _ringVolume: number;
+  _videoRes: VideoResolutionOptions;
   _audioContext: AudioContext;
   _inStreamContexts: InputStreamContext[];
   _outStreamContexts: OutputStreamContext[];
@@ -75,7 +81,7 @@ export class MediaEngine {
   _supportedDeviceTypes: string[];
   _eventEmitter: EventEmitter;
 
-  constructor(config: MediaEngineConfig | null, eventEmitter: EventEmitter) {
+  constructor(eventEmitter: EventEmitter) {
     this._isPlaying = false;
     this._availableDevices = [];
     this._inStreamContexts = [];
@@ -84,8 +90,9 @@ export class MediaEngine {
     this._outputVolume = 0.8;  // default 80%
     this._inputVolume = 1; // 100 %
     this._ringVolume = 0.8;
+    this._videoRes = VIDEO_RES_720P;
     this._eventEmitter = eventEmitter;
-    this._prepareConfig(config);
+    this._prepareConfig(null);
     this._initDevices();
   }
 
@@ -636,6 +643,13 @@ export class MediaEngine {
     }
     return deviceId;
   };
+  // params : 'QVGA' | 'VGA' | '720P' | '1080P'
+  setVideoRes = (res: VideoResolutionOptions): void => {
+    this._videoRes = res;
+  };
+  getVideoRes = (): VideoResolutionOptions => {
+    return this._videoRes;
+  }
   _changeDeviceConfig = (deviceKind: string, deviceId: string): void => {
     // TO DO change out & in device
     switch (deviceKind) {
@@ -701,8 +715,6 @@ export class MediaEngine {
             enabled: false,
             deviceIds: [],
           },
-          width: 1280,
-          height: 720
         },
         screenShare: {
           cursor: 'always',
@@ -869,18 +881,30 @@ export class MediaEngine {
       };
     }
     if (isVideo) {
+      let width = 1280;
+      let height = 720;
+      if (this._videoRes === VIDEO_RES_QVGA) {
+        width = 320;
+        height = 240;
+      } else if (this._videoRes === VIDEO_RES_VGA) {
+        width = 640;
+        height = 480;
+      } else if (this._videoRes === VIDEO_RES_1080P) {
+        width = 1920;
+        height = 1080;
+      }
       // @ts-ignore
       if (this._config.video.in.deviceIds.length > 0) {
         constraints.video = {
           // @ts-ignore
           deviceId: this._config.video.in.deviceIds,
-          width: this._config!.video.width,
-          height:this._config!.video.height
+          width,
+          height
         };
       } else {
         constraints.video = {
-          width: this._config!.video.width,
-          height: this._config!.video.height,
+          width,
+          height,
         }
       }
     }

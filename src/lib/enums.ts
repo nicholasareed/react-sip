@@ -95,3 +95,14 @@ export type SdpOfferAnswerStatus =
   | 'sdp/OFFER_SENT'
   | 'sdp/OFFER_RECEIVED'
   | 'sdp/OFFER_ANSWER_COMPLETE';
+
+export const VIDEO_RES_QVGA = 'QVGA';  //  320x240  4:3
+export const VIDEO_RES_VGA = 'VGA';  // 640x480  4:3
+export const VIDEO_RES_720P = '720P'; // 1280x720 16:9
+export const VIDEO_RES_1080P = '1080P'; // 1920x1080 16:9
+export type VideoResolutionOptions =
+  | 'QVGA'
+  | 'VGA'
+  | '720P'
+  | '1080P';
+

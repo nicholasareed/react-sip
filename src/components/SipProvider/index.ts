@@ -98,6 +98,8 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
     changeAudioInput: PropTypes.func,
     changeAudioOutput: PropTypes.func,
     changeVideoInput: PropTypes.func,
+    changeVideoResolution: PropTypes.func,
+    getVideoResolution: PropTypes.func,
     mediaDevices: mediaDeviceListPropType,
     getPreferredDevice: PropTypes.func
   };
@@ -208,6 +210,8 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       changeAudioInput: this.changeAudioInput.bind(this),
       changeAudioOutput: this.changeAudioOutput.bind(this),
       changeVideoInput: this.changeVideoInput.bind(this),
+      changeVideoResolution: this.changeVideoResolution.bind(this),
+      getVideoResolution: this.getVideoResolution.bind(this),
       mediaDevices: [...this.state.mediaDevices],
       getPreferredDevice: this.getPreferredDevice.bind(this)
     };
@@ -238,8 +242,7 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
       channelType: DTMF_TRANSPORT.RFC2833, // INFO based ??
     };
     // initialize the media engine
-    this._mediaEngine = new MediaEngine(null, this.eventBus);
-
+    this._mediaEngine = new MediaEngine(this.eventBus);
   };
   _getCallConfig = (): SipCallConfig => {
     return this._callConfig;
@@ -475,6 +478,12 @@ export default class SipProvider extends React.Component<JsSipConfig, JsSipState
   };
   getPreferredDevice = (deviceKind: string): string => {
     return this._mediaEngine.getConfiguredDevice(deviceKind);
+  };
+  changeVideoResolution = (res: 'QVGA' | 'VGA' | '720P' | '1080P'): void => {
+    this._mediaEngine.setVideoRes(res);
+  };
+  getVideoResolution = (): string => {
+    return this._mediaEngine.getVideoRes();
   };
   // Clear all existing sessions from the UA
   _terminateAll = () => {
